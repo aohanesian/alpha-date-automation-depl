@@ -57,15 +57,51 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function makeAuthenticatedRequest(url, options = {}) {
+        const token = userData.token;
+
+        if (!token) {
+            throw new Error('No authentication token available');
+        }
+
+        const defaultOptions = {
+            credentials: 'include',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'X-Auth-Token': token
+            }
+        };
+
+        // Merge headers
+        const mergedOptions = {
+            ...defaultOptions,
+            ...options,
+            headers: {
+                ...defaultOptions.headers,
+                ...(options.headers || {})
+            }
+        };
+
+        console.log('Making authenticated request to:', url);
+        console.log('With token:', token.substring(0, 20) + '...');
+
+        return fetch(url, mergedOptions);
+    }
+
     async function validateSession() {
         try {
-            const response = await fetch(`${API_URL}/chat/profiles`, {
-                credentials: 'include',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                }
-            });
+            const response = await makeAuthenticatedRequest(`${API_URL}/chat/profiles`);
+
+            if (response.status === 401) {
+                console.log('Session validation failed - 401 response');
+                return false;
+            }
+
+            const data = await response.json();
+            console.log('Session validation response:', data);
+
             return response.ok;
         } catch (error) {
             console.error('Session validation failed:', error);
@@ -219,47 +255,43 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load Profiles
     async function loadProfiles() {
         try {
+            console.log('Loading profiles with token:', userData.token?.substring(0, 20) + '...');
+
             // Load chat profiles
-            const chatResponse = await fetch(`${API_URL}/chat/profiles`, {
-                credentials: 'include',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                }
-            });
+            const chatResponse = await makeAuthenticatedRequest(`${API_URL}/chat/profiles`);
 
             if (chatResponse.status === 401) {
-                // Session expired
+                console.log('Chat profiles request returned 401');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
                 return;
             }
 
             const chatData = await chatResponse.json();
+            console.log('Chat profiles response:', chatData);
 
             if (chatData.success) {
                 renderChatProfiles(chatData.profiles);
             } else {
                 console.error('Failed to load chat profiles:', chatData.message);
+                // If it's an auth error, show debug info
+                if (chatData.debug) {
+                    console.log('Debug info:', chatData.debug);
+                }
             }
 
             // Load mail profiles
-            const mailResponse = await fetch(`${API_URL}/mail/profiles`, {
-                credentials: 'include',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                }
-            });
+            const mailResponse = await makeAuthenticatedRequest(`${API_URL}/mail/profiles`);
 
             if (mailResponse.status === 401) {
-                // Session expired
+                console.log('Mail profiles request returned 401');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
                 return;
             }
 
             const mailData = await mailResponse.json();
+            console.log('Mail profiles response:', mailData);
 
             if (mailData.success) {
                 renderMailProfiles(mailData.profiles);
@@ -273,11 +305,13 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Failed to load profiles:', error);
             // If network error, might be session issue
             if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                console.log('Network error detected, clearing stored data');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
             }
         }
     }
+
 
     // Render Chat Profiles
     function renderChatProfiles(profiles) {
@@ -352,6 +386,46 @@ document.addEventListener('DOMContentLoaded', () => {
             profileBlock.append(header, textarea, charCounter, status, controls);
             chatProfilesContainer.appendChild(profileBlock);
         });
+    }
+
+    async function startChatProcessing(profileId, textarea) {
+        const messageTemplate = textarea.value.trim();
+        const profileBlock = document.querySelector(`.profile-item[data-profile-id="${profileId}"][data-profile-type="chat"]`);
+        const status = profileBlock.querySelector('.status');
+
+        if (!messageTemplate || messageTemplate.length < 5) {
+            status.textContent = 'Error: Message template must be at least 5 characters';
+            status.className = 'status error';
+            return;
+        }
+
+        try {
+            status.textContent = 'Starting...';
+            status.className = 'status processing';
+
+            const response = await makeAuthenticatedRequest(`${API_URL}/chat/start`, {
+                method: 'POST',
+                body: JSON.stringify({ profileId, messageTemplate })
+            });
+
+            if (response.status === 401) {
+                localStorage.removeItem('alphaAutoData');
+                location.reload();
+                return;
+            }
+
+            const data = await response.json();
+
+            if (data.success) {
+                startStatusPolling(profileId, 'chat');
+            } else {
+                status.textContent = data.message || 'Failed to start processing';
+                status.className = 'status error';
+            }
+        } catch (error) {
+            status.textContent = `Error: ${error.message}`;
+            status.className = 'status error';
+        }
     }
 
     // Render Mail Profiles
@@ -452,13 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load attachments for mail profile
     async function loadAttachments(profileId, container) {
         try {
-            const response = await fetch(`${API_URL}/mail/attachments/${profileId}`, {
-                credentials: 'include',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                }
-            });
+            const response = await makeAuthenticatedRequest(`${API_URL}/mail/attachments/${profileId}`);
 
             if (response.status === 401) {
                 container.innerHTML = '<div class="status error">Session expired</div>';
@@ -542,51 +610,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Chat functions
-    async function startChatProcessing(profileId, textarea) {
-        const messageTemplate = textarea.value.trim();
-        const profileBlock = document.querySelector(`.profile-item[data-profile-id="${profileId}"][data-profile-type="chat"]`);
-        const status = profileBlock.querySelector('.status');
-
-        if (!messageTemplate || messageTemplate.length < 5) {
-            status.textContent = 'Error: Message template must be at least 5 characters';
-            status.className = 'status error';
-            return;
-        }
-
-        try {
-            status.textContent = 'Starting...';
-            status.className = 'status processing';
-
-            const response = await fetch(`${API_URL}/chat/start`, {
-                method: 'POST',
-                credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({ profileId, messageTemplate })
-            });
-
-            if (response.status === 401) {
-                localStorage.removeItem('alphaAutoData');
-                location.reload();
-                return;
-            }
-
-            const data = await response.json();
-
-            if (data.success) {
-                startStatusPolling(profileId, 'chat');
-            } else {
-                status.textContent = data.message || 'Failed to start processing';
-                status.className = 'status error';
-            }
-        } catch (error) {
-            status.textContent = `Error: ${error.message}`;
-            status.className = 'status error';
-        }
-    }
-
     async function stopChatProcessing(profileId) {
         try {
             const response = await fetch(`${API_URL}/chat/stop`, {
@@ -738,13 +761,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const endpoint = type === 'chat' ? 'chat/status' : 'mail/status';
         const intervalId = setInterval(async () => {
             try {
-                const response = await fetch(`${API_URL}/${endpoint}/${profileId}`, {
-                    credentials: 'include',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    }
-                });
+                const response = await makeAuthenticatedRequest(`${API_URL}/${endpoint}/${profileId}`);
 
                 if (response.status === 401) {
                     clearInterval(intervalId);
@@ -780,4 +797,4 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }, 2000);
     }
-});
+})

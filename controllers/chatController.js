@@ -1,21 +1,61 @@
-// controllers/chatController.js
+// Modified chatController.js
 import express from 'express';
 import chatService from '../services/chatService.js';
 
 const router = express.Router();
 
+// Middleware to extract token from header or session
+function extractToken(req, res, next) {
+    // Try to get token from Authorization header first
+    const authHeader = req.get('Authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        req.token = authHeader.substring(7);
+        console.log('Token from Authorization header:', req.token);
+        return next();
+    }
+    
+    // Try to get token from custom header
+    const customToken = req.get('X-Auth-Token');
+    if (customToken) {
+        req.token = customToken;
+        console.log('Token from X-Auth-Token header:', req.token);
+        return next();
+    }
+    
+    // Fallback to session token
+    if (req.session && req.session.token) {
+        req.token = req.session.token;
+        console.log('Token from session:', req.token);
+        return next();
+    }
+    
+    console.log('No token found in headers or session');
+    req.token = null;
+    next();
+}
+
+// Apply token extraction middleware to all routes
+router.use(extractToken);
+
 // Get profiles for chat automation
 router.get('/profiles', async (req, res) => {
     try {
-        console.log('Session in /profiles route:', req.session);
-        const token = req.session.token;
-
-        if (!token) {
-            console.log('No token found in session');
-            return res.status(401).json({ success: false, message: 'Not authenticated' });
+        console.log('Chat profiles request - Token present:', !!req.token);
+        
+        if (!req.token) {
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Not authenticated - no token provided',
+                debug: {
+                    hasSession: !!req.session,
+                    sessionId: req.sessionID,
+                    authHeader: req.get('Authorization'),
+                    customHeader: req.get('X-Auth-Token')
+                }
+            });
         }
 
-        const profiles = await chatService.getProfiles(token);
+        const profiles = await chatService.getProfiles(req.token);
         res.json({ success: true, profiles });
     } catch (error) {
         console.error('Get profiles error:', error);
@@ -27,17 +67,15 @@ router.get('/profiles', async (req, res) => {
 router.post('/start', async (req, res) => {
     try {
         const { profileId, messageTemplate } = req.body;
-        const token = req.session.token;
+        
+        console.log('Chat start request - Token present:', !!req.token);
 
-        console.log('Session in /start route:', req.session);
-        console.log('Token from session:', token);
-
-        if (!token || !profileId || !messageTemplate) {
-            return res.status(400).json({
-                success: false,
+        if (!req.token || !profileId || !messageTemplate) {
+            return res.status(400).json({ 
+                success: false, 
                 message: 'Missing required data',
                 details: {
-                    hasToken: !!token,
+                    hasToken: !!req.token,
                     hasProfileId: !!profileId,
                     hasMessageTemplate: !!messageTemplate
                 }
@@ -45,7 +83,7 @@ router.post('/start', async (req, res) => {
         }
 
         // Start chat processing in the background (non-blocking)
-        chatService.startProfileProcessing(profileId, messageTemplate, token);
+        chatService.startProfileProcessing(profileId, messageTemplate, req.token);
 
         res.json({ success: true, message: 'Processing started' });
     } catch (error) {
