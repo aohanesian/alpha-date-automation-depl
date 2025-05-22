@@ -6,7 +6,6 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "postinstall": "npm install",
     "dev": "vite",
     "build": "npx vite build",
     "preview": "vite preview",
