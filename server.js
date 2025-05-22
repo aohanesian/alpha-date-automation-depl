@@ -22,33 +22,25 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
     secret: process.env.SESSION_SECRET || 'alpha-date-automation-secret',
     resave: false,
     saveUninitialized: false,
-    cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        maxAge: 24 * 60 * 60 * 1000
-    }
+    cookie: { secure: process.env.NODE_ENV === 'production' }
 }));
 
-// API routes
+// Routes
 app.use('/api/auth', authController);
 app.use('/api/chat', chatController);
 app.use('/api/mail', mailController);
 
-// Serve frontend build static files from dist/
-app.use(express.static(path.join(__dirname, 'dist'), {
-    maxAge: '1y',
-    immutable: true
-}));
-
-// Serve index.html for all other routes (to support client-side routing)
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+// Serve the main dashboard
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Start server
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
