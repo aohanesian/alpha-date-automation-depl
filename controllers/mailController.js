@@ -4,18 +4,58 @@ import mailService from '../services/mailService.js';
 
 const router = express.Router();
 
+// Middleware to extract token from header or session
+function extractToken(req, res, next) {
+    // Try to get token from Authorization header first
+    const authHeader = req.get('Authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        req.token = authHeader.substring(7);
+        console.log('Token from Authorization header:', req.token);
+        return next();
+    }
+
+    // Try to get token from custom header
+    const customToken = req.get('X-Auth-Token');
+    if (customToken) {
+        req.token = customToken;
+        console.log('Token from X-Auth-Token header:', req.token);
+        return next();
+    }
+
+    // Fallback to session token
+    if (req.session && req.session.token) {
+        req.token = req.session.token;
+        console.log('Token from session:', req.token);
+        return next();
+    }
+
+    console.log('No token found in headers or session');
+    req.token = null;
+    next();
+}
+
+// Apply token extraction middleware to all routes
+router.use(extractToken);
+
 // Get profiles for mail automation
 router.get('/profiles', async (req, res) => {
     try {
-        console.log('Session in mail/profiles route:', req.session);
-        const token = req.session.token;
+        console.log('Mail profiles request - Token present:', !!req.token);
 
-        if (!token) {
-            console.log('No token found in session for mail profiles');
-            return res.status(401).json({ success: false, message: 'Not authenticated' });
+        if (!req.token) {
+            return res.status(401).json({
+                success: false,
+                message: 'Not authenticated - no token provided',
+                debug: {
+                    hasSession: !!req.session,
+                    sessionId: req.sessionID,
+                    authHeader: req.get('Authorization'),
+                    customHeader: req.get('X-Auth-Token')
+                }
+            });
         }
 
-        const profiles = await mailService.getProfiles(token);
+        const profiles = await mailService.getProfiles(req.token);
         res.json({ success: true, profiles });
     } catch (error) {
         console.error('Get mail profiles error:', error);
