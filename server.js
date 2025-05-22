@@ -57,7 +57,7 @@ app.use(session({
     cookie: {
         secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS !== 'false',
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        maxAge: 9 * 60 * 60 * 1000, // 9 hours in milliseconds
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined
     }
