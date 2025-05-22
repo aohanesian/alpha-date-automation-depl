@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: alpha-date-automation
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
