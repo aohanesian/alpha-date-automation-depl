@@ -26,7 +26,11 @@ app.use(session({
     secret: process.env.SESSION_SECRET || 'alpha-date-automation-secret',
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: process.env.NODE_ENV === 'production' }
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 24 * 60 * 60 * 1000
+    }
 }));
 
 // API routes
@@ -35,14 +39,14 @@ app.use('/api/chat', chatController);
 app.use('/api/mail', mailController);
 
 // Serve frontend build static files from dist/
-app.use(express.static(path.join(__dirname, 'dist')));
+app.use(express.static(path.join(__dirname, 'dist'), {
+    maxAge: '1y',
+    immutable: true
+}));
 
 // Serve index.html for all other routes (to support client-side routing)
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+export default app;
