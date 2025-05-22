@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         method: 'POST',
                         credentials: 'include',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ operatorId: userData.operatorId, token: alphaToken })
+                        body: JSON.stringify({ operatorId: userData.operatorId, token: loginData.token })
                     });
                 }, 105000);
 
