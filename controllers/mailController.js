@@ -67,7 +67,7 @@ router.get('/profiles', async (req, res) => {
 router.get('/attachments/:profileId', async (req, res) => {
     try {
         const { profileId } = req.params;
-        const token = req.session.token;
+        const token = req.token;
 
         if (!token) {
             return res.status(401).json({ success: false, message: 'Not authenticated' });
@@ -85,7 +85,7 @@ router.get('/attachments/:profileId', async (req, res) => {
 router.post('/start', async (req, res) => {
     try {
         const { profileId, message, attachments } = req.body;
-        const token = req.session.token;
+        const token = req.token;
 
         console.log('Session in mail/start route:', req.session);
 
