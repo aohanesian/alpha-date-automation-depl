@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Step 1: Login to get user data
             const loginResponse = await fetch("https://alpha.date/api/login/login", {
                 method: "POST",
+                credentials: 'include',
                 headers: {
                     "Content-Type": "application/json"
                 },
@@ -78,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Step 2: Check whitelist with the obtained token
             const whitelistResponse = await fetch(`${API_URL}/auth/check-whitelist`, {
                 method: 'POST',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     email: userData.email,
@@ -94,6 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Set online status
                 await fetch(`${API_URL}/auth/online-status`, {
                     method: 'POST',
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ operatorId: userData.operatorId })
                 });
@@ -109,6 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setInterval(() => {
                     fetch(`${API_URL}/auth/online-status`, {
                         method: 'POST',
+                        credentials: 'include',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ operatorId: userData.operatorId })
                     });
@@ -136,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadProfiles() {
         try {
             // Load chat profiles
-            const chatResponse = await fetch(`${API_URL}/chat/profiles`);
+            const chatResponse = await fetch(`${API_URL}/chat/profiles`, {credentials: 'include'});
             const chatData = await chatResponse.json();
 
             if (chatData.success) {
@@ -144,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Load mail profiles
-            const mailResponse = await fetch(`${API_URL}/mail/profiles`);
+            const mailResponse = await fetch(`${API_URL}/mail/profiles`, {credentials: 'include'});
             const mailData = await mailResponse.json();
 
             if (mailData.success) {
@@ -326,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load attachments for mail profile
     async function loadAttachments(profileId, container) {
         try {
-            const response = await fetch(`${API_URL}/mail/attachments/${profileId}`);
+            const response = await fetch(`${API_URL}/mail/attachments/${profileId}`, {credentials: 'include'});
             const data = await response.json();
 
             if (data.success) {
@@ -421,6 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const response = await fetch(`${API_URL}/chat/start`, {
                 method: 'POST',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ profileId, messageTemplate })
             });
@@ -443,6 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`${API_URL}/chat/stop`, {
                 method: 'POST',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ profileId })
             });
@@ -462,6 +468,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`${API_URL}/chat/clear-blocks`, {
                 method: 'POST',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ profileId })
             });
@@ -502,6 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const response = await fetch(`${API_URL}/mail/start`, {
                 method: 'POST',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ profileId, message, attachments })
             });
@@ -524,6 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`${API_URL}/mail/stop`, {
                 method: 'POST',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ profileId })
             });
@@ -543,6 +552,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`${API_URL}/mail/clear-blocks`, {
                 method: 'POST',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ profileId })
             });
@@ -564,7 +574,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const endpoint = type === 'chat' ? 'chat/status' : 'mail/status';
         const intervalId = setInterval(async () => {
             try {
-                const response = await fetch(`${API_URL}/${endpoint}/${profileId}`);
+                const response = await fetch(`${API_URL}/${endpoint}/${profileId}`, {credentials: 'include'});
                 const data = await response.json();
 
                 if (data.success) {
