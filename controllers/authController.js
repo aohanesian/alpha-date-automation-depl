@@ -26,8 +26,8 @@ router.post('/check-whitelist', async (req, res) => {
 // Update operator's online status
 router.post('/online-status', async (req, res) => {
     try {
-        const { operatorId } = req.body;
-        const token = req.session.token;
+        const { operatorId , token } = req.body;
+        // const token = req.session.token;
 
         if (!token || !operatorId) {
             return res.status(400).json({ success: false, message: 'Missing required data' });
