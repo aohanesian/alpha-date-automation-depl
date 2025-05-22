@@ -1,0 +1,299 @@
+// services/chatService.js
+import fetch from 'node-fetch';
+
+// In-memory storage for processing state
+const processingProfiles = new Set();
+const abortControllers = new Map();
+const blockLists = {};
+const statusMessages = {};
+
+const chatService = {
+    async getProfiles(token) {
+        try {
+            const response = await fetch('https://alpha.date/api/operator/profiles', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to load profiles: ${response.statusText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Profile loading failed:', error);
+            throw error;
+        }
+    },
+
+    async startProfileProcessing(profileId, messageTemplate, token) {
+        if (processingProfiles.has(profileId)) {
+            console.log(`Profile ${profileId} is already processing`);
+            return;
+        }
+
+        const controller = new AbortController();
+        abortControllers.set(profileId, controller);
+        processingProfiles.add(profileId);
+        this.setProfileStatus(profileId, 'Starting...');
+
+        // Start processing in a non-blocking way
+        this.processChatsForProfile(profileId, messageTemplate, token, controller)
+            .catch(error => {
+                console.error(`Processing error for profile ${profileId}:`, error);
+                this.setProfileStatus(profileId, `Error: ${error.message}`);
+                this.cleanupProcessing(profileId);
+            });
+    },
+
+    async processChatsForProfile(profileId, messageTemplate, token, controller) {
+        let page = 1;
+
+        try {
+            while (true) {
+                if (controller.signal.aborted) {
+                    this.setProfileStatus(profileId, 'Processing stopped');
+                    break;
+                }
+
+                this.setProfileStatus(profileId, `Fetching page ${page}...`);
+
+                const chats = await this.fetchProfileChats(profileId, page, token, controller.signal);
+
+                if (controller.signal.aborted) break;
+
+                if (chats.length === 0) {
+                    this.setProfileStatus(profileId, `No chats found on page ${page}. Starting from page 1...`);
+                    page = 1;
+                    await this.delay(5000, controller.signal);
+                    continue;
+                }
+
+                this.setProfileStatus(profileId, `Processing 0/${chats.length} chats (Page ${page})...`);
+
+                let sentCount = 0;
+
+                for (let i = 0; i < chats.length; i++) {
+                    if (controller.signal.aborted) break;
+
+                    const chat = chats[i];
+                    this.setProfileStatus(profileId, `Processing ${i + 1}/${chats.length} chats (Page ${page})... (Sent: ${sentCount})`);
+
+                    try {
+                        const { needsFollowUp, recipientId } = await this.analyzeChat(chat.chat_uid, token, controller.signal);
+
+                        if (controller.signal.aborted) break;
+
+                        if (needsFollowUp && recipientId) {
+                            await this.sendFollowUpMessage(
+                                profileId,
+                                recipientId,
+                                chat.chat_uid,
+                                messageTemplate,
+                                token,
+                                controller.signal
+                            );
+
+                            if (controller.signal.aborted) break;
+
+                            this.addToBlockList(profileId, chat.chat_uid);
+                            sentCount++;
+
+                            this.setProfileStatus(profileId, `Processing ${i + 1}/${chats.length} chats (Page ${page})... (Sent: ${sentCount})`);
+                            await this.delay(1000, controller.signal);
+                        }
+                    } catch (error) {
+                        if (error.name === 'AbortError') break;
+                        console.error(`Error processing chat ${chat.chat_uid}:`, error);
+                    }
+                }
+
+                this.setProfileStatus(profileId, `Completed page ${page}: Sent ${sentCount}/${chats.length} messages`);
+                page++;
+                await this.delay(5000, controller.signal);
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                throw error;
+            }
+        } finally {
+            this.cleanupProcessing(profileId);
+        }
+    },
+
+    delay(ms, signal) {
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(resolve, ms);
+
+            if (signal) {
+                if (signal.aborted) {
+                    clearTimeout(timeoutId);
+                    reject(new Error('Aborted'));
+                    return;
+                }
+
+                const abortHandler = () => {
+                    clearTimeout(timeoutId);
+                    reject(new Error('Aborted'));
+                };
+
+                signal.addEventListener('abort', abortHandler, { once: true });
+            }
+        });
+    },
+
+    async fetchProfileChats(profileId, page, token, signal) {
+        try {
+            const response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    user_id: profileId,
+                    chat_uid: false,
+                    page: page,
+                    freeze: true,
+                    limits: null,
+                    ONLINE_STATUS: 1,
+                    SEARCH: "",
+                    CHAT_TYPE: "CHANCE"
+                }),
+                signal
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return (data.response || []).filter(chat =>
+                !blockLists[profileId]?.includes(chat.chat_uid)
+            );
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw error;
+            }
+            console.error('Failed to fetch chats:', error);
+            throw new Error(`Failed to fetch chats: ${error.message}`);
+        }
+    },
+
+    async analyzeChat(chatUid, token, signal) {
+        try {
+            const response = await fetch('https://alpha.date/api/chatList/chatHistory', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ chat_id: chatUid, page: 1 }),
+                signal
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (data.response?.length > 0) {
+                const lastMessage = data.response[data.response.length - 1];
+                return {
+                    needsFollowUp: lastMessage.payed === 0 ||
+                        lastMessage.message_type === "SENT_LIKE" ||
+                        lastMessage.message_type === "SENT_WINK" ||
+                        lastMessage.message_content === "" ||
+                        lastMessage.message_price === "0.0000",
+                    recipientId: lastMessage.recipient_external_id
+                };
+            }
+
+            return { needsFollowUp: false, recipientId: null };
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw error;
+            }
+            console.error('Chat analysis failed:', error);
+            return { needsFollowUp: false, recipientId: null };
+        }
+    },
+
+    async sendFollowUpMessage(senderId, recipientId, chatUid, messageContent, token, signal) {
+        try {
+            const response = await fetch('https://alpha.date/api/chat/message', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    sender_id: +senderId,
+                    recipient_id: recipientId,
+                    message_content: messageContent,
+                    message_type: "SENT_TEXT",
+                    filename: "",
+                    chance: true
+                }),
+                signal
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            return true;
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw error;
+            }
+            console.error('Failed to send message:', error);
+            throw error;
+        }
+    },
+
+    stopProfileProcessing(profileId) {
+        if (!processingProfiles.has(profileId)) return;
+
+        const controller = abortControllers.get(profileId);
+        if (!controller) return;
+
+        if (!controller.signal.aborted) {
+            controller.abort();
+        }
+
+        this.setProfileStatus(profileId, 'Stopping...');
+    },
+
+    addToBlockList(profileId, chatUid) {
+        if (!blockLists[profileId]) {
+            blockLists[profileId] = [];
+        }
+        if (!blockLists[profileId].includes(chatUid)) {
+            blockLists[profileId].push(chatUid);
+        }
+    },
+
+    clearProfileBlockList(profileId) {
+        if (blockLists[profileId]) {
+            delete blockLists[profileId];
+            this.setProfileStatus(profileId, 'Block list cleared');
+        }
+    },
+
+    setProfileStatus(profileId, message) {
+        statusMessages[profileId] = message;
+        console.log(`Profile ${profileId}: ${message}`);
+    },
+
+    getProfileStatus(profileId) {
+        return statusMessages[profileId] || 'Ready';
+    },
+
+    cleanupProcessing(profileId) {
+        processingProfiles.delete(profileId);
+        abortControllers.delete(profileId);
+    }
+};
+
+export default chatService;
