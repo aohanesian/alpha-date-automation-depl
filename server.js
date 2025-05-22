@@ -19,19 +19,38 @@ import authController from './controllers/authController.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// Middleware - Order is important!
 app.use(cors({
-    origin: 'https://alpha-date-automation-depl.onrender.com',
-    credentials: true
+    origin: ['https://alpha-date-automation-depl.onrender.com', 'http://localhost:3000'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Session configuration - BEFORE routes
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'alpha-date-automation-secret',
+    secret: process.env.SESSION_SECRET || 'alpha-date-automation-secret-very-long-and-secure',
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: process.env.NODE_ENV === 'production' }
+    name: 'alphaSessionId', // Custom session name
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    }
 }));
+
+// Add session debugging middleware
+app.use((req, res, next) => {
+    console.log('Session ID:', req.sessionID);
+    console.log('Session data:', req.session);
+    next();
+});
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
 app.use('/api/auth', authController);
@@ -44,7 +63,13 @@ app.use(express.static(path.join(__dirname, 'dist'), {
     immutable: true
 }));
 
+// Catch-all handler for SPA
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
 // Start server
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV}`);
 });

@@ -6,14 +6,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginBtn = document.getElementById('login-btn');
     const loginStatus = document.getElementById('login-status');
     const emailInput = document.getElementById('email');
-    const passwordInput = document.getElementById('password'); // Changed from token to password
-    // Removed operatorIdInput since we get it from API
+    const passwordInput = document.getElementById('password');
     const chatProfilesContainer = document.getElementById('chat-profiles-container');
     const mailProfilesContainer = document.getElementById('mail-profiles-container');
     const toggleAttachments = document.getElementById('toggle-attachments');
 
     // API URL - Replace with your actual deployed URL
-    const API_URL = import.meta.env.VITE_API_URL;
+    const API_URL = import.meta.env.VITE_API_URL || window.location.origin + '/api';
 
     // App State
     let userData = {
@@ -22,15 +21,55 @@ document.addEventListener('DOMContentLoaded', () => {
         operatorId: ''
     };
 
-    // Check for stored login
-    const storedData = localStorage.getItem('alphaAutoData');
-    if (storedData) {
+    // Check for stored login on page load
+    checkStoredLogin();
+
+    async function checkStoredLogin() {
+        const storedData = localStorage.getItem('alphaAutoData');
+        if (storedData) {
+            try {
+                userData = JSON.parse(storedData);
+                emailInput.value = userData.email;
+
+                // Try to validate the stored session
+                loginStatus.textContent = 'Checking stored session...';
+                loginStatus.className = 'status processing';
+
+                const isValid = await validateSession();
+                if (isValid) {
+                    // Session is valid, switch to main interface
+                    loginForm.style.display = 'none';
+                    mainContainer.style.display = 'block';
+                    await loadProfiles();
+                    setupOnlineStatusInterval();
+                    loginStatus.textContent = 'Session restored successfully!';
+                    loginStatus.className = 'status success';
+                } else {
+                    // Session is invalid, clear stored data
+                    localStorage.removeItem('alphaAutoData');
+                    loginStatus.textContent = 'Session expired, please login again';
+                    loginStatus.className = 'status error';
+                }
+            } catch (error) {
+                console.error('Failed to parse stored data:', error);
+                localStorage.removeItem('alphaAutoData');
+            }
+        }
+    }
+
+    async function validateSession() {
         try {
-            userData = JSON.parse(storedData);
-            emailInput.value = userData.email;
-            // Don't pre-fill password for security
+            const response = await fetch(`${API_URL}/chat/profiles`, {
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+            return response.ok;
         } catch (error) {
-            console.error('Failed to parse stored data:', error);
+            console.error('Session validation failed:', error);
+            return false;
         }
     }
 
@@ -62,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!loginResponse.ok) {
-                throw new Error('Login failed');
+                throw new Error('Login failed - invalid credentials');
             }
 
             const loginData = await loginResponse.json();
@@ -74,12 +113,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 operatorId: loginData.operator_id
             };
 
+            console.log('Login successful, user data:', { email: userData.email, operatorId: userData.operatorId });
 
             // Step 2: Check whitelist with the obtained token
             const whitelistResponse = await fetch(`${API_URL}/auth/check-whitelist`, {
                 method: 'POST',
                 credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
                 body: JSON.stringify({
                     email: userData.email,
                     token: userData.token
@@ -93,29 +136,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 localStorage.setItem('alphaAutoData', JSON.stringify(userData));
 
                 // Set online status
-                await fetch(`${API_URL}/auth/online-status`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ operatorId: userData.operatorId, token: loginData.token })
-                });
+                await setOnlineStatus();
 
                 // Switch to main interface
                 loginForm.style.display = 'none';
                 mainContainer.style.display = 'block';
 
                 // Load profiles data
-                loadProfiles();
+                await loadProfiles();
 
                 // Set up online status interval
-                setInterval(() => {
-                    fetch(`${API_URL}/auth/online-status`, {
-                        method: 'POST',
-                        credentials: 'include',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ operatorId: userData.operatorId, token: loginData.token })
-                    });
-                }, 105000);
+                setupOnlineStatusInterval();
 
                 loginStatus.textContent = 'Login successful!';
                 loginStatus.className = 'status success';
@@ -130,31 +161,121 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    async function setOnlineStatus() {
+        try {
+            const response = await fetch(`${API_URL}/auth/online-status`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    operatorId: userData.operatorId,
+                    token: userData.token
+                })
+            });
+
+            if (!response.ok) {
+                console.warn('Failed to set online status');
+            }
+        } catch (error) {
+            console.error('Online status error:', error);
+        }
+    }
+
+    function setupOnlineStatusInterval() {
+        setInterval(async () => {
+            await setOnlineStatus();
+        }, 105000);
+    }
+
     function displayLoginError(message) {
         loginStatus.textContent = message;
         loginStatus.className = 'status error';
+    }
+
+    // Add logout functionality
+    function addLogoutButton() {
+        if (!document.getElementById('logout-btn')) {
+            const logoutBtn = document.createElement('button');
+            logoutBtn.id = 'logout-btn';
+            logoutBtn.textContent = 'Logout';
+            logoutBtn.className = 'control-btn btn-clear';
+            logoutBtn.style.position = 'fixed';
+            logoutBtn.style.top = '10px';
+            logoutBtn.style.right = '10px';
+            logoutBtn.style.zIndex = '1000';
+
+            logoutBtn.addEventListener('click', () => {
+                localStorage.removeItem('alphaAutoData');
+                location.reload();
+            });
+
+            document.body.appendChild(logoutBtn);
+        }
     }
 
     // Load Profiles
     async function loadProfiles() {
         try {
             // Load chat profiles
-            const chatResponse = await fetch(`${API_URL}/chat/profiles`, { credentials: 'include' });
+            const chatResponse = await fetch(`${API_URL}/chat/profiles`, {
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (chatResponse.status === 401) {
+                // Session expired
+                localStorage.removeItem('alphaAutoData');
+                location.reload();
+                return;
+            }
+
             const chatData = await chatResponse.json();
 
             if (chatData.success) {
                 renderChatProfiles(chatData.profiles);
+            } else {
+                console.error('Failed to load chat profiles:', chatData.message);
             }
 
             // Load mail profiles
-            const mailResponse = await fetch(`${API_URL}/mail/profiles`, { credentials: 'include' });
+            const mailResponse = await fetch(`${API_URL}/mail/profiles`, {
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (mailResponse.status === 401) {
+                // Session expired
+                localStorage.removeItem('alphaAutoData');
+                location.reload();
+                return;
+            }
+
             const mailData = await mailResponse.json();
 
             if (mailData.success) {
                 renderMailProfiles(mailData.profiles);
+            } else {
+                console.error('Failed to load mail profiles:', mailData.message);
             }
+
+            // Add logout button after successful load
+            addLogoutButton();
         } catch (error) {
             console.error('Failed to load profiles:', error);
+            // If network error, might be session issue
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                localStorage.removeItem('alphaAutoData');
+                location.reload();
+            }
         }
     }
 
@@ -318,18 +439,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Toggle attachments display
-        toggleAttachments.addEventListener('change', () => {
-            const containers = document.querySelectorAll('.attachments-container');
-            containers.forEach(container => {
-                container.style.display = toggleAttachments.checked ? 'grid' : 'none';
+        if (toggleAttachments) {
+            toggleAttachments.addEventListener('change', () => {
+                const containers = document.querySelectorAll('.attachments-container');
+                containers.forEach(container => {
+                    container.style.display = toggleAttachments.checked ? 'grid' : 'none';
+                });
             });
-        });
+        }
     }
 
     // Load attachments for mail profile
     async function loadAttachments(profileId, container) {
         try {
-            const response = await fetch(`${API_URL}/mail/attachments/${profileId}`, { credentials: 'include' });
+            const response = await fetch(`${API_URL}/mail/attachments/${profileId}`, {
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.status === 401) {
+                container.innerHTML = '<div class="status error">Session expired</div>';
+                return;
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -412,8 +547,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const profileBlock = document.querySelector(`.profile-item[data-profile-id="${profileId}"][data-profile-type="chat"]`);
         const status = profileBlock.querySelector('.status');
 
-        if (!messageTemplate) {
-            status.textContent = 'Error: Message template is empty';
+        if (!messageTemplate || messageTemplate.length < 5) {
+            status.textContent = 'Error: Message template must be at least 5 characters';
             status.className = 'status error';
             return;
         }
@@ -425,9 +560,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`${API_URL}/chat/start`, {
                 method: 'POST',
                 credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
                 body: JSON.stringify({ profileId, messageTemplate })
             });
+
+            if (response.status === 401) {
+                localStorage.removeItem('alphaAutoData');
+                location.reload();
+                return;
+            }
 
             const data = await response.json();
 
@@ -448,7 +592,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`${API_URL}/chat/stop`, {
                 method: 'POST',
                 credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
                 body: JSON.stringify({ profileId })
             });
 
@@ -468,7 +615,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`${API_URL}/chat/clear-blocks`, {
                 method: 'POST',
                 credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
                 body: JSON.stringify({ profileId })
             });
 
@@ -509,9 +659,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`${API_URL}/mail/start`, {
                 method: 'POST',
                 credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
                 body: JSON.stringify({ profileId, message, attachments })
             });
+
+            if (response.status === 401) {
+                localStorage.removeItem('alphaAutoData');
+                location.reload();
+                return;
+            }
 
             const data = await response.json();
 
@@ -532,7 +691,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`${API_URL}/mail/stop`, {
                 method: 'POST',
                 credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
                 body: JSON.stringify({ profileId })
             });
 
@@ -552,7 +714,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`${API_URL}/mail/clear-blocks`, {
                 method: 'POST',
                 credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
                 body: JSON.stringify({ profileId })
             });
 
@@ -573,7 +738,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const endpoint = type === 'chat' ? 'chat/status' : 'mail/status';
         const intervalId = setInterval(async () => {
             try {
-                const response = await fetch(`${API_URL}/${endpoint}/${profileId}`, { credentials: 'include' });
+                const response = await fetch(`${API_URL}/${endpoint}/${profileId}`, {
+                    credentials: 'include',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.status === 401) {
+                    clearInterval(intervalId);
+                    localStorage.removeItem('alphaAutoData');
+                    location.reload();
+                    return;
+                }
+
                 const data = await response.json();
 
                 if (data.success) {

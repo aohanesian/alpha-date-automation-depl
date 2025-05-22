@@ -7,15 +7,18 @@ const router = express.Router();
 // Get profiles for mail automation
 router.get('/profiles', async (req, res) => {
     try {
+        console.log('Session in mail/profiles route:', req.session);
         const token = req.session.token;
+
         if (!token) {
+            console.log('No token found in session for mail profiles');
             return res.status(401).json({ success: false, message: 'Not authenticated' });
         }
 
         const profiles = await mailService.getProfiles(token);
         res.json({ success: true, profiles });
     } catch (error) {
-        console.error('Get profiles error:', error);
+        console.error('Get mail profiles error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
@@ -44,8 +47,18 @@ router.post('/start', async (req, res) => {
         const { profileId, message, attachments } = req.body;
         const token = req.session.token;
 
+        console.log('Session in mail/start route:', req.session);
+
         if (!token || !profileId || !message) {
-            return res.status(400).json({ success: false, message: 'Missing required data' });
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required data',
+                details: {
+                    hasToken: !!token,
+                    hasProfileId: !!profileId,
+                    hasMessage: !!message
+                }
+            });
         }
 
         if (message.length < 150) {

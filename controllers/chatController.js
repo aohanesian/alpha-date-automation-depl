@@ -7,11 +7,13 @@ const router = express.Router();
 // Get profiles for chat automation
 router.get('/profiles', async (req, res) => {
     try {
-        // const token = req.session.token;
-        const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTAzMzIsImVtYWlsIjoiT1AxNjgyMzUwNzQ3QGFscGhhLmRhdGUiLCJmaXJzdG5hbWUiOiLQktC40YLQsNC70LjRjyIsImxhc3RuYW1lIjoi0JPQsNCy0YDQuNC70LXQvdC60L4g0JTQldCd0KwiLCJhZ2VuY3lfaWQiOjc3MSwiZXh0ZXJuYWxfaWQiOjE2ODIzNTA3NDcsInRva2VuX2NyZWF0ZSI6IjIwMjUtMDUtMjJUMDg6MzU6MjguMjg1WiIsInRva2VuX2VuZCI6IjIwMjUtMDUtMjJUMTc6MzU6MjguMjg1WiIsImlhdCI6MTc0NzkwMjkyOCwiZXhwIjoxNzQ3OTM1MzI4fQ.jDASx41uW3v5wpZ0FDp0I-R6ODW1zBiR3LmOmy-CBAU'
-        // if (!token) {
-        //     return res.status(401).json({ success: false, message: 'Not authenticated' });
-        // }
+        console.log('Session in /profiles route:', req.session);
+        const token = req.session.token;
+
+        if (!token) {
+            console.log('No token found in session');
+            return res.status(401).json({ success: false, message: 'Not authenticated' });
+        }
 
         const profiles = await chatService.getProfiles(token);
         res.json({ success: true, profiles });
@@ -27,8 +29,19 @@ router.post('/start', async (req, res) => {
         const { profileId, messageTemplate } = req.body;
         const token = req.session.token;
 
+        console.log('Session in /start route:', req.session);
+        console.log('Token from session:', token);
+
         if (!token || !profileId || !messageTemplate) {
-            return res.status(400).json({ success: false, message: 'Missing required data' });
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required data',
+                details: {
+                    hasToken: !!token,
+                    hasProfileId: !!profileId,
+                    hasMessageTemplate: !!messageTemplate
+                }
+            });
         }
 
         // Start chat processing in the background (non-blocking)
