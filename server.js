@@ -36,9 +36,10 @@ app.use('/api/chat', chatController);
 app.use('/api/mail', mailController);
 
 // Serve the main dashboard
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+app.use(express.static(path.join(__dirname, 'dist'), {
+    maxAge: '1y',
+    immutable: true
+}));
 
 // Start server
 app.listen(PORT, () => {
