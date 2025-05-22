@@ -87,31 +87,72 @@ router.post('/start', async (req, res) => {
         const { profileId, message, attachments } = req.body;
         const token = req.token;
 
-        console.log('Session in mail/start route:', req.session);
+        console.log('Mail start request received:', {
+            body: req.body,
+            tokenPresent: !!token,
+            profileIdPresent: !!profileId,
+            messagePresent: !!message,
+            messageLength: message?.length || 0
+        });
 
-        if (!token || !profileId || !message) {
-            return res.status(400).json({
+        // Validate required fields
+        if (!token) {
+            return res.status(401).json({
                 success: false,
-                message: 'Missing required data',
-                details: {
-                    hasToken: !!token,
-                    hasProfileId: !!profileId,
-                    hasMessage: !!message
+                message: 'Authentication required',
+                debug: {
+                    headers: {
+                        authorization: req.get('Authorization'),
+                        xAuthToken: req.get('X-Auth-Token')
+                    },
+                    session: req.session
                 }
             });
         }
 
-        if (message.length < 150) {
-            return res.status(400).json({ success: false, message: 'Message must be at least 150 characters' });
+        if (!profileId) {
+            return res.status(400).json({
+                success: false,
+                message: 'profileId is required',
+                receivedData: req.body
+            });
         }
 
-        // Start mail processing in the background (non-blocking)
-        mailService.startProcessing(profileId, message, attachments, token);
+        if (!message) {
+            return res.status(400).json({
+                success: false,
+                message: 'message is required',
+                receivedData: req.body
+            });
+        }
 
-        res.json({ success: true, message: 'Processing started' });
+        if (message.length < 150) {
+            return res.status(400).json({
+                success: false,
+                message: 'Message must be at least 150 characters',
+                receivedLength: message.length
+            });
+        }
+
+        // Start processing
+        mailService.startProcessing(profileId, message, attachments || [], token);
+
+        res.json({
+            success: true,
+            message: 'Processing started',
+            details: {
+                profileId,
+                messageLength: message.length,
+                attachmentsCount: attachments?.length || 0
+            }
+        });
     } catch (error) {
         console.error('Start mail processing error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
+        });
     }
 });
 
