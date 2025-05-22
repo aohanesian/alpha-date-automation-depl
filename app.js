@@ -679,7 +679,7 @@ document.addEventListener('DOMContentLoaded', () => {
             status.textContent = 'Starting...';
             status.className = 'status processing';
 
-            const response = await makeAuthenticatedRequest(`${API_URL}/chat/mail`, {
+            const response = await makeAuthenticatedRequest(`${API_URL}/mail/start`, {
                 method: 'POST',
                 body: JSON.stringify({ profileId, message, attachments })
             });
