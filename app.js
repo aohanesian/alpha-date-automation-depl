@@ -52,7 +52,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // Step 1: Login to get user data
             const loginResponse = await fetch("https://alpha.date/api/login/login", {
                 method: "POST",
-                credentials: 'include',
                 headers: {
                     "Content-Type": "application/json"
                 },
