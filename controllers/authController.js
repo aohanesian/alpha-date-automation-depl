@@ -9,7 +9,7 @@ router.post('/check-whitelist', async (req, res) => {
     try {
         const { email, token } = req.body;
         const isWhitelisted = await authService.checkWhitelist(email);
-
+        
         if (isWhitelisted) {
             req.session.email = email;
             req.session.token = token;
@@ -26,7 +26,7 @@ router.post('/check-whitelist', async (req, res) => {
 // Update operator's online status
 router.post('/online-status', async (req, res) => {
     try {
-        const { operatorId , token } = req.body;
+        const { operatorId, token } = req.body;
         // const token = req.session.token;
 
         if (!token || !operatorId) {

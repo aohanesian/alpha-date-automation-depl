@@ -74,7 +74,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 operatorId: loginData.operator_id
             };
 
-            const alphaToken = localStorage.setItem('alphaAutoData', JSON.stringify(userData));
 
             // Step 2: Check whitelist with the obtained token
             const whitelistResponse = await fetch(`${API_URL}/auth/check-whitelist`, {
@@ -98,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     method: 'POST',
                     credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ operatorId: userData.operatorId, token: alphaToken })
+                    body: JSON.stringify({ operatorId: userData.operatorId, token: loginData.token })
                 });
 
                 // Switch to main interface
