@@ -6,18 +6,6 @@ let whitelistedEmails = [];
 let lastWhitelistFetch = 0;
 
 const authService = {
-
-    async restoreSession(token) {
-        try {
-            const response = await fetch('https://alpha.date/api/validate-token', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            return response.json();
-        } catch (error) {
-            throw new Error('Session restoration failed');
-        }
-    },
-
     async checkWhitelist(email) {
         try {
             // Refresh whitelist every hour

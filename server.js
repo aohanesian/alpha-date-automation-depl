@@ -28,7 +28,7 @@ app.use(cors({
         const allowedOrigins = [
             'https://alpha-date-automation-depl.onrender.com',
             'http://localhost:3000',
-            'http://localhost:5173',
+            'http://localhost:5173', // Vite dev server
             'http://127.0.0.1:3000',
             'http://127.0.0.1:5173'
         ];
@@ -42,7 +42,7 @@ app.use(cors({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Auth-Token'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
 
@@ -55,9 +55,9 @@ app.use(session({
     saveUninitialized: false,
     name: 'alphaSessionId', // Custom session name
     cookie: {
-        secure: process.env.NODE_ENV === 'production',
+        secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS !== 'false',
         httpOnly: true,
-        maxAge: 9 * 60 * 60 * 1000,
+        maxAge: 9 * 60 * 60 * 1000, // 9 hours in milliseconds
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined
     }
@@ -81,22 +81,6 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
-
-app.use((req, res, next) => {
-    // Check both session and header tokens
-    const headerToken = req.headers['x-auth-token'];
-    if (headerToken && !req.session.token) {
-        // Try to restore session from token
-        authService.restoreSession(headerToken)
-            .then(sessionData => {
-                req.session = sessionData;
-                next();
-            })
-            .catch(next);
-    } else {
-        next();
-    }
-});
 
 // Routes
 app.use('/api/auth', authController);
