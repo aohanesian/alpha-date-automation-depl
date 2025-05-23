@@ -1,5 +1,14 @@
 // public/app.js
 document.addEventListener('DOMContentLoaded', () => {
+
+    window.addEventListener('beforeunload', function (e) {
+        const confirmationMessage = 'Are you sure you want to leave? Turn off sender before exit.';
+        e.preventDefault();
+        e.returnValue = confirmationMessage;
+        return confirmationMessage;
+    });
+
+
     // DOM Elements
     const loginForm = document.getElementById('login-container');
     const mainContainer = document.getElementById('main-container');
@@ -11,7 +20,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const mailProfilesContainer = document.getElementById('mail-profiles-container');
     const toggleAttachments = document.getElementById('toggle-attachments');
 
-    // API URL - Replace with your actual deployed URL
     const API_URL = import.meta.env.VITE_API_URL || window.location.origin + '/api';
 
     // App State
@@ -368,12 +376,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const startBtn = document.createElement('button');
             startBtn.textContent = 'Start';
             startBtn.className = 'control-btn btn-start';
-            startBtn.addEventListener('click', () => startChatProcessing(profile.external_id, textarea));
+            startBtn.addEventListener('click', () => {
+                startChatProcessing(profile.external_id, textarea);
+                startBtn.classList.add('running');
+            });
 
             const stopBtn = document.createElement('button');
             stopBtn.textContent = 'Stop';
             stopBtn.className = 'control-btn btn-stop';
-            stopBtn.addEventListener('click', () => stopChatProcessing(profile.external_id));
+            stopBtn.addEventListener('click', () => {
+                stopChatProcessing(profile.external_id);
+                startBtn.classList.remove('running');
+            });
 
             const clearBtn = document.createElement('button');
             clearBtn.textContent = 'Clear Blocks';
@@ -492,13 +506,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const startBtn = document.createElement('button');
             startBtn.textContent = 'Start';
             startBtn.className = 'control-btn btn-start';
-            startBtn.addEventListener('click', () =>
-                startMailProcessing(profile.external_id, textarea, attachmentsContainer));
+            startBtn.addEventListener('click', () => {
+                startMailProcessing(profile.external_id, textarea, attachmentsContainer);
+                startBtn.classList.add('running');
+            });
 
             const stopBtn = document.createElement('button');
             stopBtn.textContent = 'Stop';
             stopBtn.className = 'control-btn btn-stop';
-            stopBtn.addEventListener('click', () => stopMailProcessing(profile.external_id));
+            stopBtn.addEventListener('click', () => {
+                stopMailProcessing(profile.external_id)
+                startBtn.classList.remove('running');
+            });
 
             const clearBtn = document.createElement('button');
             clearBtn.textContent = 'Clear Blocks';

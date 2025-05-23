@@ -219,6 +219,16 @@ textarea {
     background: #FF9800;
 }
 
+.control-btn.btn-start {
+    background-color: #4CAF50;
+}
+
+.control-btn.btn-start.running {
+    background-color: #007bff;
+    color: #fff;
+}
+
+
 .toggle-container {
     margin-bottom: 15px;
 }

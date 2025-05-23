@@ -46,8 +46,6 @@ const chatService = {
     },
 
     async processChatsForProfile(profileId, messageTemplate, token, controller) {
-        let page = 1;
-
         try {
             while (true) {
                 if (controller.signal.aborted) {
@@ -55,28 +53,38 @@ const chatService = {
                     break;
                 }
 
-                this.setProfileStatus(profileId, `Fetching page ${page}...`);
-
-                const chats = await this.fetchProfileChats(profileId, page, token, controller.signal);
+                // First, fetch all available chats from all pages
+                this.setProfileStatus(profileId, 'Fetching all available chats...');
+                const allChats = await this.fetchAllChats(profileId, token, controller.signal);
 
                 if (controller.signal.aborted) break;
 
-                if (chats.length === 0) {
-                    this.setProfileStatus(profileId, `No chats found on page ${page}. Starting from page 1...`);
-                    page = 1;
+                if (allChats.length === 0) {
+                    this.setProfileStatus(profileId, 'No chats found. Waiting before retry...');
                     await this.delay(5000, controller.signal);
                     continue;
                 }
 
-                this.setProfileStatus(profileId, `Processing 0/${chats.length} chats (Page ${page})...`);
+                // Filter out blocked chats
+                const availableChats = allChats.filter(chat =>
+                    !blockLists[profileId]?.includes(chat.chat_uid)
+                );
+
+                if (availableChats.length === 0) {
+                    this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
+                    await this.delay(5000, controller.signal);
+                    continue;
+                }
+
+                this.setProfileStatus(profileId, `Processing ${availableChats.length} available chats (${allChats.length - availableChats.length} blocked)...`);
 
                 let sentCount = 0;
 
-                for (let i = 0; i < chats.length; i++) {
+                for (let i = 0; i < availableChats.length; i++) {
                     if (controller.signal.aborted) break;
 
-                    const chat = chats[i];
-                    this.setProfileStatus(profileId, `Processing ${i + 1}/${chats.length} chats (Page ${page})... (Sent: ${sentCount})`);
+                    const chat = availableChats[i];
+                    this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
 
                     try {
                         const { needsFollowUp, recipientId } = await this.analyzeChat(chat.chat_uid, token, controller.signal);
@@ -98,7 +106,7 @@ const chatService = {
                             this.addToBlockList(profileId, chat.chat_uid);
                             sentCount++;
 
-                            this.setProfileStatus(profileId, `Processing ${i + 1}/${chats.length} chats (Page ${page})... (Sent: ${sentCount})`);
+                            this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
                             await this.delay(1000, controller.signal);
                         }
                     } catch (error) {
@@ -107,8 +115,7 @@ const chatService = {
                     }
                 }
 
-                this.setProfileStatus(profileId, `Completed page ${page}: Sent ${sentCount}/${chats.length} messages`);
-                page++;
+                this.setProfileStatus(profileId, `Completed cycle: Sent ${sentCount}/${availableChats.length} messages. Waiting before next cycle...`);
                 await this.delay(5000, controller.signal);
             }
         } catch (error) {
@@ -117,6 +124,64 @@ const chatService = {
             }
         } finally {
             this.cleanupProcessing(profileId);
+        }
+    },
+
+    async fetchAllChats(profileId, token, signal) {
+        const allChats = [];
+        let page = 1;
+
+        try {
+            while (true) {
+                if (signal?.aborted) {
+                    throw new Error('Aborted');
+                }
+
+                console.log(`Fetching page ${page} for profile ${profileId}...`);
+
+                const response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_id: profileId,
+                        chat_uid: false,
+                        page: page,
+                        freeze: true,
+                        limits: null,
+                        ONLINE_STATUS: 1,
+                        SEARCH: "",
+                        CHAT_TYPE: "CHANCE"
+                    }),
+                    signal
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const pageChats = data.response || [];
+
+                if (pageChats.length === 0) {
+                    console.log(`No more chats found at page ${page}. Total fetched: ${allChats.length}`);
+                    break;
+                }
+
+                allChats.push(...pageChats);
+                console.log(`Fetched ${pageChats.length} chats from page ${page}. Total: ${allChats.length}`);
+                page++;
+            }
+
+            return allChats;
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw error;
+            }
+            console.error('Failed to fetch all chats:', error);
+            throw new Error(`Failed to fetch all chats: ${error.message}`);
         }
     },
 
@@ -141,43 +206,7 @@ const chatService = {
         });
     },
 
-    async fetchProfileChats(profileId, page, token, signal) {
-        try {
-            const response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    user_id: profileId,
-                    chat_uid: false,
-                    page: page,
-                    freeze: true,
-                    limits: null,
-                    ONLINE_STATUS: 1,
-                    SEARCH: "",
-                    CHAT_TYPE: "CHANCE"
-                }),
-                signal
-            });
 
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            return (data.response || []).filter(chat =>
-                !blockLists[profileId]?.includes(chat.chat_uid)
-            );
-        } catch (error) {
-            if (error.name === 'AbortError') {
-                throw error;
-            }
-            console.error('Failed to fetch chats:', error);
-            throw new Error(`Failed to fetch chats: ${error.message}`);
-        }
-    },
 
     async analyzeChat(chatUid, token, signal) {
         try {

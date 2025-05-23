@@ -95,8 +95,6 @@ const mailService = {
     },
 
     async processMailsForProfile(profileId, message, attachmentsList, token, controller) {
-        let page = 1;
-
         try {
             while (true) {
                 if (controller.signal.aborted) {
@@ -104,32 +102,42 @@ const mailService = {
                     break;
                 }
 
-                this.setProfileStatus(profileId, `Fetching page ${page}...`);
-
-                const chats = await this.fetchChanceChats(profileId, page, token, controller.signal);
+                // First, fetch all available chats from all pages
+                this.setProfileStatus(profileId, 'Fetching all available chats...');
+                const allChats = await this.fetchAllChanceChats(profileId, token, controller.signal);
 
                 if (controller.signal.aborted) break;
 
-                const total = chats.length;
-
-                if (total === 0) {
-                    this.setProfileStatus(profileId, `No chats found on page ${page}. Starting from page 1...`);
-                    page = 1;
+                if (allChats.length === 0) {
+                    this.setProfileStatus(profileId, 'No chats found. Waiting before retry...');
                     await this.delay(5000, controller.signal);
                     continue;
                 }
 
+                // Filter out blocked recipients
+                const availableChats = allChats.filter(chat =>
+                    !mailBlockLists[profileId]?.includes(chat.recipient_external_id)
+                );
+
+                if (availableChats.length === 0) {
+                    this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
+                    await this.delay(5000, controller.signal);
+                    continue;
+                }
+
+                this.setProfileStatus(profileId, `Processing ${availableChats.length} available chats (${allChats.length - availableChats.length} blocked)...`);
+
                 let sent = 0;
                 let skipped = 0;
 
-                for (const [index, chat] of chats.entries()) {
+                for (const [index, chat] of availableChats.entries()) {
                     if (controller.signal.aborted) {
                         this.setProfileStatus(profileId, 'Processing stopped');
                         break;
                     }
 
                     this.setProfileStatus(profileId,
-                        `Page ${page}: Processing ${index + 1}/${total} (${sent} sent, ${skipped} skipped)`
+                        `Processing ${index + 1}/${availableChats.length} (${sent} sent, ${skipped} skipped)`
                     );
 
                     const recipientId = await this.getRecipientId(chat.chat_uid, token);
@@ -156,9 +164,7 @@ const mailService = {
                     await this.delay(15000, controller.signal); // Rate limiting
                 }
 
-                this.setProfileStatus(profileId, `Page ${page} completed: ${sent} sent, ${skipped} skipped`);
-
-                page++;
+                this.setProfileStatus(profileId, `Completed cycle: ${sent} sent, ${skipped} skipped. Waiting before next cycle...`);
                 await this.delay(5000, controller.signal);
             }
         } catch (error) {
@@ -167,6 +173,64 @@ const mailService = {
             }
         } finally {
             this.cleanupProcessing(profileId);
+        }
+    },
+
+    async fetchAllChanceChats(profileId, token, signal) {
+        const allChats = [];
+        let page = 1;
+
+        try {
+            while (true) {
+                if (signal?.aborted) {
+                    throw new Error('Aborted');
+                }
+
+                console.log(`Fetching mail chats page ${page} for profile ${profileId}...`);
+
+                const response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_id: profileId,
+                        chat_uid: false,
+                        page: page,
+                        freeze: true,
+                        limits: null,
+                        ONLINE_STATUS: 1,
+                        SEARCH: "",
+                        CHAT_TYPE: "CHANCE"
+                    }),
+                    signal
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const pageChats = data.response || [];
+
+                if (pageChats.length === 0) {
+                    console.log(`No more mail chats found at page ${page}. Total fetched: ${allChats.length}`);
+                    break;
+                }
+
+                allChats.push(...pageChats);
+                console.log(`Fetched ${pageChats.length} mail chats from page ${page}. Total: ${allChats.length}`);
+                page++;
+            }
+
+            return allChats;
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw error;
+            }
+            console.error('Failed to fetch all mail chats:', error);
+            throw new Error(`Failed to fetch all mail chats: ${error.message}`);
         }
     },
 
@@ -189,44 +253,6 @@ const mailService = {
                 signal.addEventListener('abort', abortHandler, { once: true });
             }
         });
-    },
-
-    async fetchChanceChats(profileId, page, token, signal) {
-        try {
-            const response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    user_id: profileId,
-                    chat_uid: false,
-                    page: page,
-                    freeze: true,
-                    limits: null,
-                    ONLINE_STATUS: 1,
-                    SEARCH: "",
-                    CHAT_TYPE: "CHANCE"
-                }),
-                signal
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            return (data.response || []).filter(chat =>
-                !mailBlockLists[profileId]?.includes(chat.recipient_external_id)
-            );
-        } catch (error) {
-            if (error.name === 'AbortError') {
-                throw error;
-            }
-            console.error('Failed to fetch chats:', error);
-            throw error;
-        }
     },
 
     async getRecipientId(chatUid, token) {
@@ -361,21 +387,6 @@ const mailService = {
             body: JSON.stringify({
                 user_id: profileId,
                 draft_ids: [draftId]
-            })
-        });
-
-        // Step 4: POST to /mails endpoint
-        await fetch('https://alpha.date/api/mailbox/mails', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                user_id: profileId,
-                folder: 'dialog',
-                man_id: recipientId,
-                page: 1
             })
         });
     },
