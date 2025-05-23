@@ -16,8 +16,10 @@ router.post('/check-whitelist', async (req, res) => {
 
         if (isWhitelisted) {
             // Store in session
+            req.session.operatorId = loginData.operator_id;
             req.session.email = email;
             req.session.token = token;
+            req.session.userAgent = req.headers['user-agent'];
 
             // Force session save
             req.session.save((err) => {

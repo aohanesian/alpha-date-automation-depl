@@ -42,7 +42,7 @@ app.use(cors({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Auth-Token'],
     optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
 
@@ -55,9 +55,9 @@ app.use(session({
     saveUninitialized: false,
     name: 'alphaSessionId', // Custom session name
     cookie: {
-        secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS !== 'false',
+        secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
-        maxAge: 9 * 60 * 60 * 1000, // 9 hours in milliseconds
+        maxAge: 9 * 60 * 60 * 1000,
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined
     }
@@ -81,6 +81,22 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.use((req, res, next) => {
+    // Check both session and header tokens
+    const headerToken = req.headers['x-auth-token'];
+    if (headerToken && !req.session.token) {
+        // Try to restore session from token
+        authService.restoreSession(headerToken)
+            .then(sessionData => {
+                req.session = sessionData;
+                next();
+            })
+            .catch(next);
+    } else {
+        next();
+    }
+});
 
 // Routes
 app.use('/api/auth', authController);

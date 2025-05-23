@@ -379,6 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
             startBtn.addEventListener('click', () => {
                 startChatProcessing(profile.external_id, textarea);
                 startBtn.classList.add('running');
+                startBtn.textContent = 'Running'
             });
 
             const stopBtn = document.createElement('button');
@@ -387,6 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
             stopBtn.addEventListener('click', () => {
                 stopChatProcessing(profile.external_id);
                 startBtn.classList.remove('running');
+                startBtn.textContent = 'Start'
             });
 
             const clearBtn = document.createElement('button');
@@ -509,6 +511,7 @@ document.addEventListener('DOMContentLoaded', () => {
             startBtn.addEventListener('click', () => {
                 startMailProcessing(profile.external_id, textarea, attachmentsContainer);
                 startBtn.classList.add('running');
+                startBtn.textContent = 'Running'
             });
 
             const stopBtn = document.createElement('button');
@@ -517,6 +520,7 @@ document.addEventListener('DOMContentLoaded', () => {
             stopBtn.addEventListener('click', () => {
                 stopMailProcessing(profile.external_id)
                 startBtn.classList.remove('running');
+                startBtn.textContent = 'Sart'
             });
 
             const clearBtn = document.createElement('button');
