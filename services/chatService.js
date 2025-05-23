@@ -107,7 +107,7 @@ const chatService = {
                             sentCount++;
 
                             this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
-                            await this.delay(1000, controller.signal);
+                            await this.delay(3000, controller.signal);
                         }
                     } catch (error) {
                         if (error.name === 'AbortError') break;

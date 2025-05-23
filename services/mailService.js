@@ -161,7 +161,7 @@ const mailService = {
                         this.setProfileStatus(profileId, `Error sending to ${recipientId}: ${error.message}`);
                     }
 
-                    await this.delay(15000, controller.signal); // Rate limiting
+                    await this.delay(9000, controller.signal);
                 }
 
                 this.setProfileStatus(profileId, `Completed cycle: ${sent} sent, ${skipped} skipped. Waiting before next cycle...`);
