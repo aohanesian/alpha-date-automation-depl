@@ -242,21 +242,62 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add logout functionality
     function addLogoutButton() {
         if (!document.getElementById('logout-btn')) {
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.position = 'fixed';
+            buttonContainer.style.top = '10px';
+            buttonContainer.style.right = '10px';
+            buttonContainer.style.zIndex = '1000';
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.gap = '10px';
+
             const logoutBtn = document.createElement('button');
             logoutBtn.id = 'logout-btn';
             logoutBtn.textContent = 'Logout';
             logoutBtn.className = 'control-btn btn-clear';
-            logoutBtn.style.position = 'fixed';
-            logoutBtn.style.top = '10px';
-            logoutBtn.style.right = '10px';
-            logoutBtn.style.zIndex = '1000';
+
+            const refreshBtn = document.createElement('button');
+            refreshBtn.id = 'refresh-profiles-btn';
+            refreshBtn.textContent = '🔄 Refresh Profiles';
+            refreshBtn.className = 'control-btn btn-start';
 
             logoutBtn.addEventListener('click', () => {
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
             });
 
-            document.body.appendChild(logoutBtn);
+            refreshBtn.addEventListener('click', async () => {
+                refreshBtn.disabled = true;
+                refreshBtn.textContent = '⏳ Stopping...';
+
+                // Stop all chat profiles
+                const chatProfiles = document.querySelectorAll('.profile-item[data-profile-type="chat"]');
+                for (const profile of chatProfiles) {
+                    const profileId = profile.dataset.profileId;
+                    await stopChatProcessing(profileId);
+                }
+
+                // Stop all mail profiles
+                const mailProfiles = document.querySelectorAll('.profile-item[data-profile-type="mail"]');
+                for (const profile of mailProfiles) {
+                    const profileId = profile.dataset.profileId;
+                    await stopMailProcessing(profileId);
+                }
+
+                // Wait a bit to ensure all processes are stopped
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                refreshBtn.textContent = '🔄 Loading...';
+
+                // Reload profiles
+                await loadProfiles();
+
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = '🔄 Refresh Profiles';
+            });
+
+            buttonContainer.appendChild(refreshBtn);
+            buttonContainer.appendChild(logoutBtn);
+            document.body.appendChild(buttonContainer);
         }
     }
 
@@ -320,7 +361,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-
     // Render Chat Profiles
     function renderChatProfiles(profiles) {
         chatProfilesContainer.innerHTML = '';
@@ -379,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
             startBtn.addEventListener('click', () => {
                 startChatProcessing(profile.external_id, textarea);
                 startBtn.classList.add('running');
-                startBtn.textContent = 'Running'
+                startBtn.textContent = 'Reset'
             });
 
             const stopBtn = document.createElement('button');
@@ -511,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
             startBtn.addEventListener('click', () => {
                 startMailProcessing(profile.external_id, textarea, attachmentsContainer);
                 startBtn.classList.add('running');
-                startBtn.textContent = 'Running'
+                startBtn.textContent = 'Reset'
             });
 
             const stopBtn = document.createElement('button');
@@ -520,7 +560,7 @@ document.addEventListener('DOMContentLoaded', () => {
             stopBtn.addEventListener('click', () => {
                 stopMailProcessing(profile.external_id)
                 startBtn.classList.remove('running');
-                startBtn.textContent = 'Sart'
+                startBtn.textContent = 'Start'
             });
 
             const clearBtn = document.createElement('button');
@@ -547,9 +587,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Load attachments for mail profile
-    async function loadAttachments(profileId, container) {
+    async function loadAttachments(profileId, container, forceRefresh = false) {
         try {
-            const response = await makeAuthenticatedRequest(`${API_URL}/mail/attachments/${profileId}`);
+            const response = await makeAuthenticatedRequest(`${API_URL}/mail/attachments/${profileId}${forceRefresh ? '?refresh=true' : ''}`);
 
             if (response.status === 401) {
                 container.innerHTML = '<div class="status error">Session expired</div>';
@@ -573,6 +613,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderAttachments(attachments, container) {
         container.innerHTML = '';
         let hasAttachments = false;
+
+        // Add refresh button at the top
+        const refreshButton = document.createElement('button');
+        refreshButton.className = 'refresh-btn';
+        refreshButton.textContent = '🔄 Refresh Attachments';
+        refreshButton.onclick = () => {
+            container.innerHTML = '<div class="status" style="width: 100px;">Refreshing attachments...</div>';
+            loadAttachments(container.closest('.profile-item').dataset.profileId, container, true);
+        };
+        container.appendChild(refreshButton);
 
         Object.entries(attachments).forEach(([type, items]) => {
             if (items && items.length > 0) {
@@ -620,6 +670,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!hasAttachments) {
             container.innerHTML = '<div class="status">No attachments available, to add attachments create folder with name "send" for each type of media</div>';
+            container.appendChild(refreshButton);
+            container.classList.add('split');
+        } else {
+            container.classList.remove('split');
         }
     }
 
@@ -692,7 +746,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Get selected attachments
         const attachments = Array.from(attachmentsContainer.querySelectorAll('input:checked')).map(checkbox => ({
             id: checkbox.dataset.id,
             type: checkbox.dataset.type
@@ -714,16 +767,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const data = await response.json();
-
             if (data.success) {
                 startStatusPolling(profileId, 'mail');
             } else {
                 status.textContent = data.message || 'Failed to start processing';
                 status.className = 'status error';
+                attachmentsContainer.style.display = 'grid';
             }
         } catch (error) {
             status.textContent = `Error: ${error.message}`;
             status.className = 'status error';
+            attachmentsContainer.style.display = 'grid';
         }
     }
 
@@ -796,18 +850,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     status.textContent = data.status;
 
+                    // Simple status class handling
+                    if (data.status.includes('Error')) {
+                        status.className = 'status error';
+                    } else if (data.status.includes('Completed')) {
+                        status.className = 'status success';
+                    } else if (data.status === 'Ready' || data.status === 'Processing stopped') {
+                        status.className = 'status';
+                    } else {
+                        status.className = 'status processing';
+                    }
+
+                    // Clear interval if processing is done
                     if (data.status.includes('Completed') || data.status.includes('Error') ||
                         data.status === 'Ready' || data.status === 'Processing stopped') {
                         clearInterval(intervalId);
-                        status.className = 'status';
-
-                        if (data.status.includes('Completed')) {
-                            status.className = 'status success';
-                        } else if (data.status.includes('Error')) {
-                            status.className = 'status error';
-                        }
-                    } else {
-                        status.className = 'status processing';
                     }
                 }
             } catch (error) {

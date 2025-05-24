@@ -163,6 +163,30 @@ textarea {
     margin: 10px 0;
 }
 
+.attachments-container.split {
+    grid-template-columns: repeat(auto-fill, minmax(100%, 1fr));
+}
+
+.refresh-btn {
+    grid-column: 1 / -1;
+    padding: 8px;
+    margin-bottom: 10px;
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.refresh-btn:hover {
+    background: #e0e0e0;
+}
+
+.refresh-btn:active {
+    transform: scale(0.98);
+}
+
 .attachment-item {
     position: relative;
     border: 1px solid #eee;
@@ -247,4 +271,17 @@ textarea {
     .split-container {
         flex-direction: column;
     }
+}
+
+.control-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+#refresh-profiles-btn {
+    min-width: 120px;
+}
+
+#refresh-profiles-btn:disabled {
+    background-color: #808080;
 }

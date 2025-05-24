@@ -26,7 +26,12 @@ const mailService = {
         }
     },
 
-    async getAttachments(profileId, token) {
+    async getAttachments(profileId, token, forceRefresh = false) {
+        // Clear cache if force refresh is requested
+        if (forceRefresh) {
+            attachmentsCache.delete(profileId);
+        }
+
         if (attachmentsCache.has(profileId)) {
             return attachmentsCache.get(profileId);
         }
@@ -425,6 +430,14 @@ const mailService = {
     cleanupProcessing(profileId) {
         processingProfiles.delete(profileId);
         abortControllers.delete(profileId);
+    },
+
+    clearAttachmentsCache(profileId) {
+        if (profileId) {
+            attachmentsCache.delete(profileId);
+        } else {
+            attachmentsCache.clear();
+        }
     }
 };
 
