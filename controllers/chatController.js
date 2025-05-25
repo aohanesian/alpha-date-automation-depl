@@ -10,6 +10,7 @@ function extractToken(req, res, next) {
     const authHeader = req.get('Authorization');
     if (authHeader && authHeader.startsWith('Bearer ')) {
         req.token = authHeader.substring(7);
+        console.log('Token from Authorization header:', req.token);
         return next();
     }
     
@@ -17,15 +18,18 @@ function extractToken(req, res, next) {
     const customToken = req.get('X-Auth-Token');
     if (customToken) {
         req.token = customToken;
+        console.log('Token from X-Auth-Token header:', req.token);
         return next();
     }
     
     // Fallback to session token
     if (req.session && req.session.token) {
         req.token = req.session.token;
+        console.log('Token from session:', req.token);
         return next();
     }
     
+    console.log('No token found in headers or session');
     req.token = null;
     next();
 }
@@ -36,10 +40,18 @@ router.use(extractToken);
 // Get profiles for chat automation
 router.get('/profiles', async (req, res) => {
     try {
+        console.log('Chat profiles request - Token present:', !!req.token);
+        
         if (!req.token) {
             return res.status(401).json({ 
                 success: false, 
-                message: 'Not authenticated - no token provided'
+                message: 'Not authenticated - no token provided',
+                debug: {
+                    hasSession: !!req.session,
+                    sessionId: req.sessionID,
+                    authHeader: req.get('Authorization'),
+                    customHeader: req.get('X-Auth-Token')
+                }
             });
         }
 
@@ -56,14 +68,23 @@ router.post('/start', async (req, res) => {
     try {
         const { profileId, messageTemplate } = req.body;
         
+        console.log('Chat start request - Token present:', !!req.token);
+
         if (!req.token || !profileId || !messageTemplate) {
             return res.status(400).json({ 
                 success: false, 
-                message: 'Missing required data'
+                message: 'Missing required data',
+                details: {
+                    hasToken: !!req.token,
+                    hasProfileId: !!profileId,
+                    hasMessageTemplate: !!messageTemplate
+                }
             });
         }
 
-        chatService.startProfileProcessing(profileId, messageTemplate, req.token, req.sessionID);
+        // Start chat processing in the background (non-blocking)
+        chatService.startProfileProcessing(profileId, messageTemplate, req.token);
+
         res.json({ success: true, message: 'Processing started' });
     } catch (error) {
         console.error('Start chat processing error:', error);
@@ -75,7 +96,7 @@ router.post('/start', async (req, res) => {
 router.post('/stop', (req, res) => {
     try {
         const { profileId } = req.body;
-        chatService.stopProfileProcessing(profileId, req.sessionID);
+        chatService.stopProfileProcessing(profileId);
         res.json({ success: true, message: 'Processing stopped' });
     } catch (error) {
         console.error('Stop chat processing error:', error);
@@ -83,26 +104,26 @@ router.post('/stop', (req, res) => {
     }
 });
 
-// Get status for a profile
-router.get('/status/:profileId', (req, res) => {
+// Clear block list for a profile
+router.post('/clear-blocks', (req, res) => {
     try {
-        const { profileId } = req.params;
-        const status = chatService.getProfileStatus(profileId, req.sessionID);
-        res.json({ success: true, status });
+        const { profileId } = req.body;
+        chatService.clearProfileBlockList(profileId);
+        res.json({ success: true, message: 'Block list cleared' });
     } catch (error) {
-        console.error('Get status error:', error);
+        console.error('Clear blocks error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
 
-// Clear blocks for a profile
-router.post('/clear-blocks', (req, res) => {
+// Get chat processing status
+router.get('/status/:profileId', (req, res) => {
     try {
-        const { profileId } = req.body;
-        chatService.clearBlocks(profileId);
-        res.json({ success: true, message: 'Block list cleared' });
+        const { profileId } = req.params;
+        const status = chatService.getProfileStatus(profileId);
+        res.json({ success: true, status });
     } catch (error) {
-        console.error('Clear blocks error:', error);
+        console.error('Get status error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });

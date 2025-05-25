@@ -15,8 +15,6 @@ const __dirname = path.dirname(__filename);
 import chatController from './controllers/chatController.js';
 import mailController from './controllers/mailController.js';
 import authController from './controllers/authController.js';
-import syncController from './controllers/syncController.js';
-import sseController from './controllers/sseController.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,8 +30,7 @@ app.use(cors({
             'http://localhost:3000',
             'http://localhost:5173', // Vite dev server
             'http://127.0.0.1:3000',
-            'http://127.0.0.1:5173',
-            'https://alpha.date'
+            'http://127.0.0.1:5173'
         ];
 
         if (allowedOrigins.indexOf(origin) !== -1) {
@@ -45,8 +42,7 @@ app.use(cors({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Auth-Token', 'Accept'],
-    exposedHeaders: ['Content-Type', 'Authorization', 'X-Auth-Token'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
 
@@ -57,42 +53,50 @@ app.use(session({
     secret: process.env.SESSION_SECRET || 'alpha-date-automation-secret-very-long-and-secure',
     resave: false,
     saveUninitialized: false,
-    name: 'alphaSessionId',
+    name: 'alphaSessionId', // Custom session name
     cookie: {
-        secure: false, // Set to false for local development
+        secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS !== 'false',
         httpOnly: true,
         maxAge: 9 * 60 * 60 * 1000, // 9 hours in milliseconds
-        sameSite: 'lax'
-    },
-    rolling: true // Refresh session with each request
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined
+    }
 }));
 
-// Add session data middleware
+// Enhanced session debugging middleware
 app.use((req, res, next) => {
-    // Check if we have a token in headers
-    const token = req.headers['x-auth-token'] || req.headers.authorization?.split(' ')[1];
-    
-    if (token && !req.session.email) {
-        // If we have a token but no session email, try to restore session data
-        const userData = req.session.userData || {};
-        if (userData.token === token) {
-            req.session.email = userData.email;
-        }
-    }
+    const timestamp = new Date().toISOString();
+    console.log(`\n=== REQUEST DEBUG ${timestamp} ===`);
+    console.log('Method:', req.method);
+    console.log('URL:', req.url);
+    console.log('Origin:', req.get('Origin'));
+    console.log('Cookie header:', req.get('Cookie'));
+    console.log('Session ID:', req.sessionID);
+    console.log('Session exists:', !!req.session);
+    console.log('Session data:', JSON.stringify(req.session, null, 2));
+    console.log('Session token present:', !!req.session?.token);
+    console.log('Session email:', req.session?.email);
+    console.log('=== END REQUEST DEBUG ===\n');
     next();
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Add after other middleware setup but before routes
-app.use(express.static('dist'));
-
 // Routes
+app.use('/api/auth', authController);
 app.use('/api/chat', chatController);
 app.use('/api/mail', mailController);
-app.use('/api/auth', authController);
-app.use('/api/sync', syncController);
-app.use('/api/sse', sseController);
+
+// CORS test endpoint
+app.get('/api/cors-test', (req, res) => {
+    res.json({
+        success: true,
+        message: 'CORS is working!',
+        origin: req.get('Origin'),
+        headers: req.headers,
+        timestamp: new Date().toISOString()
+    });
+});
 
 // Session test endpoint
 app.get('/api/session-test', (req, res) => {
@@ -131,27 +135,6 @@ app.post('/api/auth-test', (req, res) => {
     });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error('Global error handler:', err);
-    res.status(500).json({
-        success: false,
-        message: 'Internal server error',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
-});
-
-// CORS test endpoint
-app.get('/api/cors-test', (req, res) => {
-    res.json({
-        success: true,
-        message: 'CORS is working!',
-        origin: req.get('Origin'),
-        headers: req.headers,
-        timestamp: new Date().toISOString()
-    });
-});
-
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({
@@ -174,6 +157,6 @@ app.get('*', (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
 });
