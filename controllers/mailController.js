@@ -10,7 +10,6 @@ function extractToken(req, res, next) {
     const authHeader = req.get('Authorization');
     if (authHeader && authHeader.startsWith('Bearer ')) {
         req.token = authHeader.substring(7);
-        console.log('Token from Authorization header:', req.token);
         return next();
     }
 
@@ -18,18 +17,15 @@ function extractToken(req, res, next) {
     const customToken = req.get('X-Auth-Token');
     if (customToken) {
         req.token = customToken;
-        console.log('Token from X-Auth-Token header:', req.token);
         return next();
     }
 
     // Fallback to session token
     if (req.session && req.session.token) {
         req.token = req.session.token;
-        console.log('Token from session:', req.token);
         return next();
     }
 
-    console.log('No token found in headers or session');
     req.token = null;
     next();
 }
@@ -40,18 +36,10 @@ router.use(extractToken);
 // Get profiles for mail automation
 router.get('/profiles', async (req, res) => {
     try {
-        console.log('Mail profiles request - Token present:', !!req.token);
-
         if (!req.token) {
             return res.status(401).json({
                 success: false,
-                message: 'Not authenticated - no token provided',
-                debug: {
-                    hasSession: !!req.session,
-                    sessionId: req.sessionID,
-                    authHeader: req.get('Authorization'),
-                    customHeader: req.get('X-Auth-Token')
-                }
+                message: 'Not authenticated - no token provided'
             });
         }
 
@@ -86,74 +74,26 @@ router.get('/attachments/:profileId', async (req, res) => {
 router.post('/start', async (req, res) => {
     try {
         const { profileId, message, attachments } = req.body;
-        const token = req.token;
 
-        console.log('Mail start request received:', {
-            body: req.body,
-            tokenPresent: !!token,
-            profileIdPresent: !!profileId,
-            messagePresent: !!message,
-            messageLength: message?.length || 0
-        });
-
-        // Validate required fields
-        if (!token) {
-            return res.status(401).json({
-                success: false,
-                message: 'Authentication required',
-                debug: {
-                    headers: {
-                        authorization: req.get('Authorization'),
-                        xAuthToken: req.get('X-Auth-Token')
-                    },
-                    session: req.session
-                }
-            });
-        }
-
-        if (!profileId) {
+        if (!req.token || !profileId || !message) {
             return res.status(400).json({
                 success: false,
-                message: 'profileId is required',
-                receivedData: req.body
+                message: 'Missing required data'
             });
         }
 
-        if (!message) {
+        if (message.length <= 150) {
             return res.status(400).json({
                 success: false,
-                message: 'message is required',
-                receivedData: req.body
+                message: 'Message must be at least 150 characters'
             });
         }
 
-        if (message.length < 150) {
-            return res.status(400).json({
-                success: false,
-                message: 'Message must be at least 150 characters',
-                receivedLength: message.length
-            });
-        }
-
-        // Start processing
-        mailService.startProcessing(profileId, message, attachments || [], token);
-
-        res.json({
-            success: true,
-            message: 'Processing started',
-            details: {
-                profileId,
-                messageLength: message.length,
-                attachmentsCount: attachments?.length || 0
-            }
-        });
+        mailService.startProcessing(profileId, message, attachments || [], req.token, req.sessionID);
+        res.json({ success: true, message: 'Processing started' });
     } catch (error) {
         console.error('Start mail processing error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error',
-            error: error.message
-        });
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 });
 
@@ -161,7 +101,7 @@ router.post('/start', async (req, res) => {
 router.post('/stop', (req, res) => {
     try {
         const { profileId } = req.body;
-        mailService.stopProcessing(profileId);
+        mailService.stopProcessing(profileId, req.sessionID);
         res.json({ success: true, message: 'Processing stopped' });
     } catch (error) {
         console.error('Stop mail processing error:', error);
@@ -169,7 +109,19 @@ router.post('/stop', (req, res) => {
     }
 });
 
-// Clear block list for a profile
+// Get status for a profile
+router.get('/status/:profileId', (req, res) => {
+    try {
+        const { profileId } = req.params;
+        const status = mailService.getProfileStatus(profileId, req.sessionID);
+        res.json({ success: true, status });
+    } catch (error) {
+        console.error('Get status error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Clear blocks for a profile
 router.post('/clear-blocks', (req, res) => {
     try {
         const { profileId } = req.body;
@@ -177,18 +129,6 @@ router.post('/clear-blocks', (req, res) => {
         res.json({ success: true, message: 'Block list cleared' });
     } catch (error) {
         console.error('Clear blocks error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-});
-
-// Get mail processing status
-router.get('/status/:profileId', (req, res) => {
-    try {
-        const { profileId } = req.params;
-        const status = mailService.getProcessingStatus(profileId);
-        res.json({ success: true, status });
-    } catch (error) {
-        console.error('Get status error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });

@@ -1,5 +1,6 @@
 // services/chatService.js
 import fetch from 'node-fetch';
+import sessionStore from './sessionService.js';
 
 // In-memory storage for processing state
 const processingProfiles = new Set();
@@ -25,42 +26,84 @@ const chatService = {
         }
     },
 
-    async startProfileProcessing(profileId, messageTemplate, token) {
+    startProfileProcessing(profileId, messageTemplate, token, sessionId) {
         if (processingProfiles.has(profileId)) {
             console.log(`Profile ${profileId} is already processing`);
             return;
         }
 
+        processingProfiles.add(profileId);
         const controller = new AbortController();
         abortControllers.set(profileId, controller);
-        processingProfiles.add(profileId);
-        this.setProfileStatus(profileId, 'Starting...');
 
+        // Update session state with message template
+        if (sessionId) {
+            sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                status: 'Initializing chat processing...',
+                messageTemplate,
+                isProcessing: true
+            });
+        }
+
+        this.setProfileStatus(profileId, 'Processing started');
+        
         // Start processing in a non-blocking way
-        this.processChatsForProfile(profileId, messageTemplate, token, controller)
+        this.processChatsForProfile(profileId, messageTemplate, token, controller, sessionId)
             .catch(error => {
                 console.error(`Processing error for profile ${profileId}:`, error);
                 this.setProfileStatus(profileId, `Error: ${error.message}`);
-                this.cleanupProcessing(profileId);
+                if (sessionId) {
+                    sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                        status: `Error: ${error.message}`,
+                        messageTemplate,
+                        isProcessing: false,
+                        error: error.message
+                    });
+                }
+                this.cleanupProcessing(profileId, sessionId);
             });
     },
 
-    async processChatsForProfile(profileId, messageTemplate, token, controller) {
+    async processChatsForProfile(profileId, messageTemplate, token, controller, sessionId) {
         try {
             while (true) {
                 if (controller.signal.aborted) {
                     this.setProfileStatus(profileId, 'Processing stopped');
+                    if (sessionId) {
+                        sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                            status: 'Processing stopped',
+                            messageTemplate,
+                            isProcessing: false
+                        });
+                    }
                     break;
                 }
 
                 // First, fetch all available chats from all pages
-                this.setProfileStatus(profileId, 'Fetching all available chats...');
+                const fetchStatus = 'Fetching available chats...';
+                this.setProfileStatus(profileId, fetchStatus);
+                if (sessionId) {
+                    sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                        status: fetchStatus,
+                        messageTemplate,
+                        isProcessing: true
+                    });
+                }
+
                 const allChats = await this.fetchAllChats(profileId, token, controller.signal);
 
                 if (controller.signal.aborted) break;
 
                 if (allChats.length === 0) {
-                    this.setProfileStatus(profileId, 'No chats found. Waiting before retry...');
+                    const noChatsStatus = 'No chats found. Waiting before retry...';
+                    this.setProfileStatus(profileId, noChatsStatus);
+                    if (sessionId) {
+                        sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                            status: noChatsStatus,
+                            messageTemplate,
+                            isProcessing: true
+                        });
+                    }
                     await this.delay(5000, controller.signal);
                     continue;
                 }
@@ -71,12 +114,33 @@ const chatService = {
                 );
 
                 if (availableChats.length === 0) {
-                    this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
+                    const allBlockedStatus = `All ${allChats.length} chats are blocked. Waiting before retry...`;
+                    this.setProfileStatus(profileId, allBlockedStatus);
+                    if (sessionId) {
+                        sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                            status: allBlockedStatus,
+                            messageTemplate,
+                            isProcessing: true
+                        });
+                    }
                     await this.delay(5000, controller.signal);
                     continue;
                 }
 
-                this.setProfileStatus(profileId, `Processing ${availableChats.length} available chats (${allChats.length - availableChats.length} blocked)...`);
+                let processingStatus = `Processing ${availableChats.length} available chats (${allChats.length - availableChats.length} blocked)...`;
+                this.setProfileStatus(profileId, processingStatus);
+                if (sessionId) {
+                    sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                        status: processingStatus,
+                        messageTemplate,
+                        isProcessing: true,
+                        progress: {
+                            total: availableChats.length,
+                            processed: 0,
+                            sent: 0
+                        }
+                    });
+                }
 
                 let sentCount = 0;
 
@@ -84,7 +148,20 @@ const chatService = {
                     if (controller.signal.aborted) break;
 
                     const chat = availableChats[i];
-                    this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
+                    const progressStatus = `Processing chat ${i + 1}/${availableChats.length} (Sent: ${sentCount})`;
+                    this.setProfileStatus(profileId, progressStatus);
+                    if (sessionId) {
+                        sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                            status: progressStatus,
+                            messageTemplate,
+                            isProcessing: true,
+                            progress: {
+                                total: availableChats.length,
+                                processed: i + 1,
+                                sent: sentCount
+                            }
+                        });
+                    }
 
                     try {
                         const { needsFollowUp, recipientId } = await this.analyzeChat(chat.chat_uid, token, controller.signal);
@@ -106,7 +183,20 @@ const chatService = {
                             this.addToBlockList(profileId, chat.chat_uid);
                             sentCount++;
 
-                            this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
+                            const updatedStatus = `Processing chat ${i + 1}/${availableChats.length} (Sent: ${sentCount})`;
+                            this.setProfileStatus(profileId, updatedStatus);
+                            if (sessionId) {
+                                sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                                    status: updatedStatus,
+                                    messageTemplate,
+                                    isProcessing: true,
+                                    progress: {
+                                        total: availableChats.length,
+                                        processed: i + 1,
+                                        sent: sentCount
+                                    }
+                                });
+                            }
                             await this.delay(3000, controller.signal);
                         }
                     } catch (error) {
@@ -115,16 +205,28 @@ const chatService = {
                     }
                 }
 
-                this.setProfileStatus(profileId, `Completed cycle: Sent ${sentCount}/${availableChats.length} messages. Waiting before next cycle...`);
+                const cycleCompleteStatus = `Completed cycle: Sent ${sentCount}/${availableChats.length} messages. Waiting before next cycle...`;
+                this.setProfileStatus(profileId, cycleCompleteStatus);
+                if (sessionId) {
+                    sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                        status: cycleCompleteStatus,
+                        messageTemplate,
+                        isProcessing: true,
+                        progress: {
+                            total: availableChats.length,
+                            processed: availableChats.length,
+                            sent: sentCount
+                        }
+                    });
+                }
                 await this.delay(5000, controller.signal);
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
                 throw error;
             }
-        } finally {
-            this.cleanupProcessing(profileId);
         }
+        this.cleanupProcessing(profileId, sessionId);
     },
 
     async fetchAllChats(profileId, token, signal) {
@@ -206,8 +308,6 @@ const chatService = {
         });
     },
 
-
-
     async analyzeChat(chatUid, token, signal) {
         try {
             const response = await fetch('https://alpha.date/api/chatList/chatHistory', {
@@ -281,7 +381,7 @@ const chatService = {
         }
     },
 
-    stopProfileProcessing(profileId) {
+    stopProfileProcessing(profileId, sessionId) {
         if (!processingProfiles.has(profileId)) return;
 
         const controller = abortControllers.get(profileId);
@@ -289,9 +389,17 @@ const chatService = {
 
         if (!controller.signal.aborted) {
             controller.abort();
+            this.setProfileStatus(profileId, 'Processing stopped');
+            
+            // Update session state
+            if (sessionId) {
+                sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                    status: 'stopped'
+                });
+            }
         }
 
-        this.setProfileStatus(profileId, 'Stopping...');
+        this.cleanupProcessing(profileId, sessionId);
     },
 
     addToBlockList(profileId, chatUid) {
@@ -310,18 +418,35 @@ const chatService = {
         }
     },
 
-    setProfileStatus(profileId, message) {
-        statusMessages[profileId] = message;
-        console.log(`Profile ${profileId}: ${message}`);
+    setProfileStatus(profileId, status) {
+        statusMessages[profileId] = status;
+        console.log(`Profile ${profileId}: ${status}`);
     },
 
-    getProfileStatus(profileId) {
+    getProfileStatus(profileId, sessionId) {
+        if (sessionId) {
+            const states = sessionStore.getProcessingStates(sessionId);
+            const state = states.get(`chat-${profileId}`);
+            if (state?.state) {
+                return state.state.status || 'Ready';
+            }
+        }
         return statusMessages[profileId] || 'Ready';
     },
 
-    cleanupProcessing(profileId) {
+    cleanupProcessing(profileId, sessionId) {
         processingProfiles.delete(profileId);
         abortControllers.delete(profileId);
+        delete statusMessages[profileId];
+
+        // Update session state
+        if (sessionId) {
+            sessionStore.updateProcessingState(sessionId, profileId, 'chat', {
+                status: 'Ready',
+                isProcessing: false,
+                messageTemplate: null
+            });
+        }
     }
 };
 

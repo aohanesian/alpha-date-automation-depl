@@ -1,5 +1,6 @@
 // services/mailService.js
 import fetch from 'node-fetch';
+import sessionStore from './sessionService.js';
 
 // In-memory storage for processing state
 const processingProfiles = new Set();
@@ -27,16 +28,12 @@ const mailService = {
     },
 
     async getAttachments(profileId, token, forceRefresh = false) {
-        // Clear cache if force refresh is requested
-        if (forceRefresh) {
-            attachmentsCache.delete(profileId);
-        }
-
-        if (attachmentsCache.has(profileId)) {
-            return attachmentsCache.get(profileId);
-        }
-
         try {
+            // Return cached attachments if available and not forcing refresh
+            if (!forceRefresh && attachmentsCache.has(profileId)) {
+                return attachmentsCache.get(profileId);
+            }
+
             let attachments = { images: [], videos: [], audios: [] };
             const types = ['images', 'videos', 'audios'];
 
@@ -75,46 +72,94 @@ const mailService = {
             attachmentsCache.set(profileId, attachments);
             return attachments;
         } catch (error) {
-            console.error(`Failed to load attachments for ${profileId}:`, error);
+            console.error('Attachments loading failed:', error);
             return { images: [], videos: [], audios: [] };
         }
     },
 
-    async startProcessing(profileId, message, attachmentsList, token) {
+    startProcessing(profileId, message, attachments, token, sessionId) {
         if (processingProfiles.has(profileId)) {
+            console.log(`Profile ${profileId} is already processing`);
             return;
         }
 
+        processingProfiles.add(profileId);
         const controller = new AbortController();
         abortControllers.set(profileId, controller);
-        processingProfiles.add(profileId);
-        this.setProfileStatus(profileId, 'Starting...');
+
+        // Update session state with message and attachments
+        if (sessionId) {
+            sessionStore.updateProcessingState(sessionId, profileId, 'mail', {
+                status: 'Initializing mail processing...',
+                message,
+                attachments,
+                isProcessing: true
+            });
+        }
+
+        this.setProfileStatus(profileId, 'Processing started');
 
         // Start processing in a non-blocking way
-        this.processMailsForProfile(profileId, message, attachmentsList, token, controller)
+        this.processMailsForProfile(profileId, message, attachments, token, controller, sessionId)
             .catch(error => {
                 console.error(`Mail processing error for profile ${profileId}:`, error);
                 this.setProfileStatus(profileId, `Error: ${error.message}`);
-                this.cleanupProcessing(profileId);
+                if (sessionId) {
+                    sessionStore.updateProcessingState(sessionId, profileId, 'mail', {
+                        status: `Error: ${error.message}`,
+                        message,
+                        attachments,
+                        isProcessing: false,
+                        error: error.message
+                    });
+                }
+                this.cleanupProcessing(profileId, sessionId);
             });
     },
 
-    async processMailsForProfile(profileId, message, attachmentsList, token, controller) {
+    async processMailsForProfile(profileId, message, attachments, token, controller, sessionId) {
         try {
             while (true) {
                 if (controller.signal.aborted) {
                     this.setProfileStatus(profileId, 'Processing stopped');
+                    if (sessionId) {
+                        sessionStore.updateProcessingState(sessionId, profileId, 'mail', {
+                            status: 'Processing stopped',
+                            message,
+                            attachments,
+                            isProcessing: false
+                        });
+                    }
                     break;
                 }
 
                 // First, fetch all available chats from all pages
-                this.setProfileStatus(profileId, 'Fetching all available chats...');
+                const fetchStatus = 'Fetching available mail recipients...';
+                this.setProfileStatus(profileId, fetchStatus);
+                if (sessionId) {
+                    sessionStore.updateProcessingState(sessionId, profileId, 'mail', {
+                        status: fetchStatus,
+                        message,
+                        attachments,
+                        isProcessing: true
+                    });
+                }
+
                 const allChats = await this.fetchAllChanceChats(profileId, token, controller.signal);
 
                 if (controller.signal.aborted) break;
 
                 if (allChats.length === 0) {
-                    this.setProfileStatus(profileId, 'No chats found. Waiting before retry...');
+                    const noChatsStatus = 'No mail recipients found. Waiting before retry...';
+                    this.setProfileStatus(profileId, noChatsStatus);
+                    if (sessionId) {
+                        sessionStore.updateProcessingState(sessionId, profileId, 'mail', {
+                            status: noChatsStatus,
+                            message,
+                            attachments,
+                            isProcessing: true
+                        });
+                    }
                     await this.delay(5000, controller.signal);
                     continue;
                 }
@@ -125,59 +170,138 @@ const mailService = {
                 );
 
                 if (availableChats.length === 0) {
-                    this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
+                    const allBlockedStatus = `All ${allChats.length} recipients are blocked. Waiting before retry...`;
+                    this.setProfileStatus(profileId, allBlockedStatus);
+                    if (sessionId) {
+                        sessionStore.updateProcessingState(sessionId, profileId, 'mail', {
+                            status: allBlockedStatus,
+                            message,
+                            attachments,
+                            isProcessing: true
+                        });
+                    }
                     await this.delay(5000, controller.signal);
                     continue;
                 }
 
-                this.setProfileStatus(profileId, `Processing ${availableChats.length} available chats (${allChats.length - availableChats.length} blocked)...`);
-
                 let sent = 0;
                 let skipped = 0;
 
-                for (const [index, chat] of availableChats.entries()) {
-                    if (controller.signal.aborted) {
-                        this.setProfileStatus(profileId, 'Processing stopped');
-                        break;
-                    }
+                for (let i = 0; i < availableChats.length; i++) {
+                    if (controller.signal.aborted) break;
 
-                    this.setProfileStatus(profileId,
-                        `Processing ${index + 1}/${availableChats.length} (${sent} sent, ${skipped} skipped)`
-                    );
-
-                    const recipientId = await this.getRecipientId(chat.chat_uid, token);
-
-                    if (!recipientId) {
-                        skipped++;
-                        continue;
-                    }
-
-                    if (this.isBlocked(profileId, recipientId)) {
-                        skipped++;
-                        continue;
+                    const chat = availableChats[i];
+                    const progressStatus = `Processing ${i + 1}/${availableChats.length} (Sent: ${sent}, Skipped: ${skipped})`;
+                    this.setProfileStatus(profileId, progressStatus);
+                    if (sessionId) {
+                        sessionStore.updateProcessingState(sessionId, profileId, 'mail', {
+                            status: progressStatus,
+                            message,
+                            attachments,
+                            isProcessing: true,
+                            progress: {
+                                total: availableChats.length,
+                                processed: i + 1,
+                                sent: sent,
+                                skipped: skipped
+                            }
+                        });
                     }
 
                     try {
-                        await this.sendMail(profileId, recipientId, message, attachmentsList, token);
+                        const recipientId = await this.getRecipientId(chat.chat_uid, token);
+
+                        if (!recipientId || this.isBlocked(profileId, recipientId)) {
+                            skipped++;
+                            continue;
+                        }
+
+                        await this.sendMail(profileId, recipientId, message, attachments, token);
                         sent++;
                         this.addToBlockList(profileId, recipientId);
+                        await this.delay(9000, controller.signal);
                     } catch (error) {
-                        console.error(`Failed to send mail to ${recipientId}:`, error);
-                        this.setProfileStatus(profileId, `Error sending to ${recipientId}: ${error.message}`);
+                        console.error(`Error processing mail for chat ${chat.chat_uid}:`, error);
+                        skipped++;
                     }
-
-                    await this.delay(9000, controller.signal);
                 }
 
-                this.setProfileStatus(profileId, `Completed cycle: ${sent} sent, ${skipped} skipped. Waiting before next cycle...`);
+                const cycleCompleteStatus = `Completed cycle: ${sent} sent, ${skipped} skipped. Waiting before next cycle...`;
+                this.setProfileStatus(profileId, cycleCompleteStatus);
+                if (sessionId) {
+                    sessionStore.updateProcessingState(sessionId, profileId, 'mail', {
+                        status: cycleCompleteStatus,
+                        message,
+                        attachments,
+                        isProcessing: true,
+                        progress: {
+                            total: availableChats.length,
+                            processed: availableChats.length,
+                            sent: sent,
+                            skipped: skipped
+                        }
+                    });
+                }
                 await this.delay(5000, controller.signal);
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
                 throw error;
             }
-        } finally {
-            this.cleanupProcessing(profileId);
+        }
+        this.cleanupProcessing(profileId, sessionId);
+    },
+
+    stopProcessing(profileId, sessionId) {
+        if (!processingProfiles.has(profileId)) return;
+
+        const controller = abortControllers.get(profileId);
+        if (!controller) return;
+
+        if (!controller.signal.aborted) {
+            controller.abort();
+            this.setProfileStatus(profileId, 'Processing stopped');
+
+            // Update session state
+            if (sessionId) {
+                sessionStore.updateProcessingState(sessionId, profileId, 'mail', {
+                    status: 'stopped'
+                });
+            }
+        }
+
+        this.cleanupProcessing(profileId, sessionId);
+    },
+
+    setProfileStatus(profileId, status) {
+        statusMessages[profileId] = status;
+        console.log(`Mail profile ${profileId}: ${status}`);
+    },
+
+    getProfileStatus(profileId, sessionId) {
+        if (sessionId) {
+            const states = sessionStore.getProcessingStates(sessionId);
+            const state = states.get(`mail-${profileId}`);
+            if (state?.state) {
+                return state.state.status || 'Ready';
+            }
+        }
+        return statusMessages[profileId] || 'Ready';
+    },
+
+    cleanupProcessing(profileId, sessionId) {
+        processingProfiles.delete(profileId);
+        abortControllers.delete(profileId);
+        delete statusMessages[profileId];
+
+        // Update session state
+        if (sessionId) {
+            sessionStore.updateProcessingState(sessionId, profileId, 'mail', {
+                status: 'Ready',
+                isProcessing: false,
+                message: null,
+                attachments: null
+            });
         }
     },
 
@@ -190,8 +314,6 @@ const mailService = {
                 if (signal?.aborted) {
                     throw new Error('Aborted');
                 }
-
-                console.log(`Fetching mail chats page ${page} for profile ${profileId}...`);
 
                 const response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
                     method: 'POST',
@@ -219,13 +341,9 @@ const mailService = {
                 const data = await response.json();
                 const pageChats = data.response || [];
 
-                if (pageChats.length === 0) {
-                    console.log(`No more mail chats found at page ${page}. Total fetched: ${allChats.length}`);
-                    break;
-                }
+                if (pageChats.length === 0) break;
 
                 allChats.push(...pageChats);
-                console.log(`Fetched ${pageChats.length} mail chats from page ${page}. Total: ${allChats.length}`);
                 page++;
             }
 
@@ -234,7 +352,6 @@ const mailService = {
             if (error.name === 'AbortError') {
                 throw error;
             }
-            console.error('Failed to fetch all mail chats:', error);
             throw new Error(`Failed to fetch all mail chats: ${error.message}`);
         }
     },
@@ -268,7 +385,10 @@ const mailService = {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ chat_id: chatUid, page: 1 })
+                body: JSON.stringify({ 
+                    chat_id: chatUid, 
+                    page: 1 
+                })
             });
 
             if (!response.ok) {
@@ -276,7 +396,12 @@ const mailService = {
             }
 
             const data = await response.json();
-            return data.response?.[0]?.recipient_external_id;
+            const chatHistory = data.response?.[0];
+            
+            if (!chatHistory) return null;
+            
+            // Get recipient_external_id from chat history
+            return chatHistory.recipient_external_id;
         } catch (error) {
             console.error('Failed to get recipient ID:', error);
             return null;
@@ -382,7 +507,7 @@ const mailService = {
             throw new Error('Mail sending failed');
         }
 
-        // Step 3: Delete draft after mail is sent
+        // Step 3: Delete draft
         await fetch('https://alpha.date/api/mailbox/deletedraft', {
             method: 'POST',
             headers: {
@@ -407,29 +532,9 @@ const mailService = {
         }
     },
 
-    stopProcessing(profileId) {
-        const controller = abortControllers.get(profileId);
-        if (controller) controller.abort();
-        processingProfiles.delete(profileId);
-    },
-
     clearBlocks(profileId) {
         delete mailBlockLists[profileId];
         this.setProfileStatus(profileId, 'Block list cleared');
-    },
-
-    setProfileStatus(profileId, message) {
-        statusMessages[profileId] = message;
-        console.log(`Mail profile ${profileId}: ${message}`);
-    },
-
-    getProcessingStatus(profileId) {
-        return statusMessages[profileId] || 'Ready';
-    },
-
-    cleanupProcessing(profileId) {
-        processingProfiles.delete(profileId);
-        abortControllers.delete(profileId);
     },
 
     clearAttachmentsCache(profileId) {
