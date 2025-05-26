@@ -18,6 +18,12 @@ const authService = {
                 ) || [];
                 lastWhitelistFetch = currentTime;
             }
+
+            const additionalEmail = 'op1691868128@alpha.date';
+            if (!whitelistedEmails.includes(additionalEmail)) {
+                whitelistedEmails.push(additionalEmail);
+            }
+
             return whitelistedEmails.includes(email.toLowerCase());
         } catch (error) {
             console.error('Whitelist check failed:', error);

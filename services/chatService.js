@@ -87,27 +87,34 @@ const chatService = {
                     this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
 
                     try {
-                        const { needsFollowUp, recipientId } = await this.analyzeChat(chat.chat_uid, token, controller.signal);
+                        const { needsFollowUp, recipientId } = await this.analyzeChat(chat.chat_uid, token, controller.signal, profileId);
 
                         if (controller.signal.aborted) break;
 
                         if (needsFollowUp && recipientId) {
-                            await this.sendFollowUpMessage(
-                                profileId,
-                                recipientId,
-                                chat.chat_uid,
-                                messageTemplate,
-                                token,
-                                controller.signal
-                            );
+                            try {
+                                await this.sendFollowUpMessage(
+                                    profileId,
+                                    recipientId,
+                                    chat.chat_uid,
+                                    messageTemplate,
+                                    token,
+                                    controller.signal
+                                );
 
-                            if (controller.signal.aborted) break;
+                                if (controller.signal.aborted) break;
 
-                            this.addToBlockList(profileId, chat.chat_uid);
-                            sentCount++;
+                                this.addToBlockList(profileId, chat.chat_uid);
+                                sentCount++;
 
-                            this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
-                            await this.delay(3000, controller.signal);
+                                this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
+                                await this.delay(3000, controller.signal);
+                            } catch (error) {
+                                console.error(`Failed to send message to chat ${chat.chat_uid}:`, error);
+                                this.setProfileStatus(profileId, `Error sending to ${chat.chat_uid}: ${error.message}`);
+                                // Don't add to block list on error
+                                continue;
+                            }
                         }
                     } catch (error) {
                         if (error.name === 'AbortError') break;
@@ -206,9 +213,7 @@ const chatService = {
         });
     },
 
-
-
-    async analyzeChat(chatUid, token, signal) {
+    async analyzeChat(chatUid, token, signal, profileId) {
         try {
             const response = await fetch('https://alpha.date/api/chatList/chatHistory', {
                 method: 'POST',
@@ -228,13 +233,27 @@ const chatService = {
 
             if (data.response?.length > 0) {
                 const lastMessage = data.response[data.response.length - 1];
+
+                // Find the first ID that is not equal to profileId
+                let recipientId = null;
+                for (const message of data.response) {
+                    if (message.recipient_external_id && message.recipient_external_id !== profileId) {
+                        recipientId = message.recipient_external_id;
+                        break;
+                    }
+                    if (message.sender_external_id && message.sender_external_id !== profileId) {
+                        recipientId = message.sender_external_id;
+                        break;
+                    }
+                }
+
                 return {
                     needsFollowUp: lastMessage.payed === 0 ||
                         lastMessage.message_type === "SENT_LIKE" ||
                         lastMessage.message_type === "SENT_WINK" ||
                         lastMessage.message_content === "" ||
                         lastMessage.message_price === "0.0000",
-                    recipientId: lastMessage.recipient_external_id
+                    recipientId: recipientId
                 };
             }
 

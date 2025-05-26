@@ -140,7 +140,7 @@ const mailService = {
                         `Processing ${index + 1}/${availableChats.length} (${sent} sent, ${skipped} skipped)`
                     );
 
-                    const recipientId = await this.getRecipientId(chat.chat_uid, token);
+                    const recipientId = await this.getRecipientId(chat.chat_uid, token, profileId);
 
                     if (!recipientId) {
                         skipped++;
@@ -159,6 +159,8 @@ const mailService = {
                     } catch (error) {
                         console.error(`Failed to send mail to ${recipientId}:`, error);
                         this.setProfileStatus(profileId, `Error sending to ${recipientId}: ${error.message}`);
+                        // Don't add to block list on error
+                        skipped++;
                     }
 
                     await this.delay(9000, controller.signal);
@@ -255,7 +257,7 @@ const mailService = {
         });
     },
 
-    async getRecipientId(chatUid, token) {
+    async getRecipientId(chatUid, token, profileId) {
         try {
             const response = await fetch('https://alpha.date/api/chatList/chatHistory', {
                 method: 'POST',
@@ -271,7 +273,20 @@ const mailService = {
             }
 
             const data = await response.json();
-            return data.response?.[0]?.recipient_external_id;
+
+            if (data.response?.length > 0) {
+                // Find the first ID that is not equal to profileId
+                for (const message of data.response) {
+                    if (message.recipient_external_id && message.recipient_external_id !== profileId) {
+                        return message.recipient_external_id;
+                    }
+                    if (message.sender_external_id && message.sender_external_id !== profileId) {
+                        return message.sender_external_id;
+                    }
+                }
+            }
+
+            return null;
         } catch (error) {
             console.error('Failed to get recipient ID:', error);
             return null;
@@ -355,40 +370,44 @@ const mailService = {
         const draftData = await draftResponse.json();
         const draftId = draftData.result[0];
 
-        // Step 2: Send mail
-        const mailResponse = await fetch('https://alpha.date/api/mailbox/mail', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                user_id: profileId,
-                recipients: [recipientId],
-                message_content: modifiedMsg,
-                message_type: "SENT_TEXT",
-                attachments: attachments,
-                parent_mail_id: null,
-                is_send_email: false
-            })
-        });
+        try {
+            // Step 2: Send mail
+            const mailResponse = await fetch('https://alpha.date/api/mailbox/mail', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    user_id: profileId,
+                    recipients: [recipientId],
+                    message_content: modifiedMsg,
+                    message_type: "SENT_TEXT",
+                    attachments: attachments,
+                    parent_mail_id: null,
+                    is_send_email: false
+                })
+            });
 
-        if (!mailResponse.ok) {
-            throw new Error('Mail sending failed');
+            if (!mailResponse.ok) {
+                throw new Error(`Mail sending failed: ${mailResponse.status}`);
+            }
+
+            // Step 3: Delete draft after mail is sent
+            await fetch('https://alpha.date/api/mailbox/deletedraft', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    user_id: profileId,
+                    draft_ids: [draftId]
+                })
+            });
+        } catch (error) {
+            throw error; // Re-throw the original error
         }
-
-        // Step 3: Delete draft after mail is sent
-        await fetch('https://alpha.date/api/mailbox/deletedraft', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                user_id: profileId,
-                draft_ids: [draftId]
-            })
-        });
     },
 
     isBlocked(profileId, recipientId) {
