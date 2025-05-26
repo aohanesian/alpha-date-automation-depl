@@ -93,22 +93,22 @@ const chatService = {
 
                         if (needsFollowUp && recipientId) {
                             try {
-                            await this.sendFollowUpMessage(
-                                profileId,
-                                recipientId,
-                                chat.chat_uid,
-                                messageTemplate,
-                                token,
-                                controller.signal
-                            );
+                                await this.sendFollowUpMessage(
+                                    profileId,
+                                    recipientId,
+                                    chat.chat_uid,
+                                    messageTemplate,
+                                    token,
+                                    controller.signal
+                                );
 
-                            if (controller.signal.aborted) break;
+                                if (controller.signal.aborted) break;
 
-                            this.addToBlockList(profileId, chat.chat_uid);
-                            sentCount++;
+                                this.addToBlockList(profileId, chat.chat_uid);
+                                sentCount++;
 
-                            this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
-                            await this.delay(3000, controller.signal);
+                                this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
+                                await this.delay(3000, controller.signal);
                             } catch (error) {
                                 console.error(`Failed to send message to chat ${chat.chat_uid}:`, error);
                                 this.setProfileStatus(profileId, `Error sending to ${chat.chat_uid}: ${error.message}`);
@@ -157,7 +157,7 @@ const chatService = {
                         chat_uid: false,
                         page: page,
                         freeze: true,
-                        limits: null,
+                        limits: 1,
                         ONLINE_STATUS: 1,
                         SEARCH: "",
                         CHAT_TYPE: "CHANCE"

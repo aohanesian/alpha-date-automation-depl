@@ -201,7 +201,7 @@ const mailService = {
                         chat_uid: false,
                         page: page,
                         freeze: true,
-                        limits: null,
+                        limits: 2,
                         ONLINE_STATUS: 1,
                         SEARCH: "",
                         CHAT_TYPE: "CHANCE"
