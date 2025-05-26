@@ -356,25 +356,45 @@ const mailService = {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                user_id: profileId,
-                recipients: [recipientId],
+                user_id: String(profileId),
+                recipients: [String(recipientId)],
                 message_content: modifiedMsg,
                 attachments: attachments
             })
         });
 
         if (!draftResponse.ok) {
-            throw new Error('Draft creation failed');
+            throw new Error(`Draft creation failed with status: ${draftResponse.status}`);
         }
 
         const draftData = await draftResponse.json();
+        console.log('Draft creation response:', JSON.stringify(draftData, null, 2));
         
         // Validate draft response
-        if (!draftData || !draftData.status || !draftData.message_id || !Array.isArray(draftData.message_id) || draftData.message_id.length === 0) {
-            throw new Error('Invalid draft response: missing or invalid message_id');
+        if (!draftData) {
+            throw new Error('Draft response is null or undefined');
+        }
+        
+        if (!draftData.status) {
+            throw new Error(`Draft creation failed: ${draftData.message || 'Unknown error'}`);
         }
 
-        const draftId = draftData.message_id[0];
+        if (!draftData.result) {
+            console.error('Unexpected draft response structure:', draftData);
+            throw new Error('Draft response missing result field');
+        }
+
+        if (!Array.isArray(draftData.result)) {
+            console.error('result is not an array:', draftData.result);
+            throw new Error('Draft response result is not an array');
+        }
+
+        if (draftData.result.length === 0) {
+            throw new Error('Draft response result array is empty');
+        }
+
+        const draftId = draftData.result[0];
+        console.log('Using draft ID:', draftId);
 
         try {
             // Step 2: Send mail
@@ -385,8 +405,8 @@ const mailService = {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    user_id: profileId,
-                    recipients: [recipientId],
+                    user_id: String(profileId),
+                    recipients: [String(recipientId)],
                     message_content: modifiedMsg,
                     message_type: "SENT_TEXT",
                     attachments: attachments,
@@ -407,7 +427,7 @@ const mailService = {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    user_id: profileId,
+                    user_id: String(profileId),
                     draft_ids: [draftId]
                 })
             });
