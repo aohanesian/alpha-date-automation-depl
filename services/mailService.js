@@ -368,7 +368,13 @@ const mailService = {
         }
 
         const draftData = await draftResponse.json();
-        const draftId = draftData.result[0];
+        
+        // Validate draft response
+        if (!draftData || !draftData.status || !draftData.message_id || !Array.isArray(draftData.message_id) || draftData.message_id.length === 0) {
+            throw new Error('Invalid draft response: missing or invalid message_id');
+        }
+
+        const draftId = draftData.message_id[0];
 
         try {
             // Step 2: Send mail
@@ -394,7 +400,7 @@ const mailService = {
             }
 
             // Step 3: Delete draft after mail is sent
-            await fetch('https://alpha.date/api/mailbox/deletedraft', {
+            const deleteResponse = await fetch('https://alpha.date/api/mailbox/deletedraft', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -405,6 +411,10 @@ const mailService = {
                     draft_ids: [draftId]
                 })
             });
+
+            if (!deleteResponse.ok) {
+                console.warn('Failed to delete draft after sending mail');
+            }
         } catch (error) {
             throw error; // Re-throw the original error
         }
