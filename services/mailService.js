@@ -356,8 +356,8 @@ const mailService = {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                user_id: String(profileId),
-                recipients: [String(recipientId)],
+                user_id: profileId,          // ← Remove String() conversion
+                recipients: [recipientId],   // ← Remove String() conversion
                 message_content: modifiedMsg,
                 attachments: attachments
             })
@@ -369,12 +369,12 @@ const mailService = {
 
         const draftData = await draftResponse.json();
         console.log('Draft creation response:', JSON.stringify(draftData, null, 2));
-        
+
         // Validate draft response
         if (!draftData) {
             throw new Error('Draft response is null or undefined');
         }
-        
+
         if (!draftData.status) {
             throw new Error(`Draft creation failed: ${draftData.message || 'Unknown error'}`);
         }
@@ -405,8 +405,8 @@ const mailService = {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    user_id: String(profileId),
-                    recipients: [String(recipientId)],
+                    user_id: profileId,          // ← Remove String() conversion
+                    recipients: [recipientId],   // ← Remove String() conversion
                     message_content: modifiedMsg,
                     message_type: "SENT_TEXT",
                     attachments: attachments,
@@ -427,8 +427,8 @@ const mailService = {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    user_id: String(profileId),
-                    draft_ids: [draftId]
+                    user_id: profileId,     // ← Remove String() conversion
+                    draft_ids: [draftId]    // ← Keep as-is (already correct from API response)
                 })
             });
 
