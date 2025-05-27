@@ -283,7 +283,7 @@ const mailService = {
                         return message.sender_external_id;
                     }
                     // If we are the sender, return the recipient's ID
-                    if (message.recipient_external_id && message.recipient_external_id !== profileId) {
+                    if (message.sender_external_id === profileId && message.recipient_external_id) {
                         return message.recipient_external_id;
                     }
                 }

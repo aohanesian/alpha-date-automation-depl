@@ -61,7 +61,7 @@ const chatService = {
 
                 if (allChats.length === 0) {
                     this.setProfileStatus(profileId, 'No chats found. Waiting before retry...');
-                    await this.delay(5000, controller.signal);
+                    await this.delay(15000, controller.signal);
                     continue;
                 }
 
@@ -74,7 +74,7 @@ const chatService = {
 
                 if (availableChats.length === 0) {
                     this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
-                    await this.delay(5000, controller.signal);
+                    await this.delay(15000, controller.signal);
                     continue;
                 }
 
@@ -128,7 +128,7 @@ const chatService = {
                 }
 
                 this.setProfileStatus(profileId, `Completed cycle: Sent ${sentCount}/${availableChats.length} messages. Waiting before next cycle...`);
-                await this.delay(5000, controller.signal);
+                await this.delay(15000, controller.signal);
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
@@ -239,27 +239,31 @@ const chatService = {
             if (data.response?.length > 0) {
                 const lastMessage = data.response[data.response.length - 1];
 
-                // Find the first ID that is not equal to profileId
-                let recipientId = null;
+                // Find the first message where we can determine the other party's ID
                 for (const message of data.response) {
-                    if (message.recipient_external_id && message.recipient_external_id !== profileId) {
-                        recipientId = message.recipient_external_id;
-                        break;
+                    // If we are the recipient, return the sender's ID
+                    if (message.recipient_external_id === profileId && message.sender_external_id) {
+                        return {
+                            needsFollowUp: lastMessage.payed === 0 ||
+                                lastMessage.message_type === "SENT_LIKE" ||
+                                lastMessage.message_type === "SENT_WINK" ||
+                                lastMessage.message_content === "" ||
+                                lastMessage.message_price === "0.0000",
+                            recipientId: message.sender_external_id
+                        };
                     }
-                    if (message.sender_external_id && message.sender_external_id !== profileId) {
-                        recipientId = message.sender_external_id;
-                        break;
+                    // If we are the sender, return the recipient's ID
+                    if (message.sender_external_id === profileId && message.recipient_external_id) {
+                        return {
+                            needsFollowUp: lastMessage.payed === 0 ||
+                                lastMessage.message_type === "SENT_LIKE" ||
+                                lastMessage.message_type === "SENT_WINK" ||
+                                lastMessage.message_content === "" ||
+                                lastMessage.message_price === "0.0000",
+                            recipientId: message.recipient_external_id
+                        };
                     }
                 }
-
-                return {
-                    needsFollowUp: lastMessage.payed === 0 ||
-                        lastMessage.message_type === "SENT_LIKE" ||
-                        lastMessage.message_type === "SENT_WINK" ||
-                        lastMessage.message_content === "" ||
-                        lastMessage.message_price === "0.0000",
-                    recipientId: recipientId
-                };
             }
 
             return { needsFollowUp: false, recipientId: null };
