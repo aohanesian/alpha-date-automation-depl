@@ -110,7 +110,7 @@ const mailService = {
 
                 if (allChats.length === 0) {
                     this.setProfileStatus(profileId, 'No chats found. Waiting before retry...');
-                    await this.delay(15000, controller.signal);
+                    await this.delay(50000, controller.signal);
                     continue;
                 }
                 
@@ -123,7 +123,7 @@ const mailService = {
 
                 if (availableChats.length === 0) {
                     this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
-                    await this.delay(15000, controller.signal);
+                    await this.delay(50000, controller.signal);
                     continue;
                 }
 
@@ -169,7 +169,7 @@ const mailService = {
                 }
 
                 this.setProfileStatus(profileId, `Completed cycle: ${sent} sent, ${skipped} skipped. Waiting before next cycle...`);
-                await this.delay(15000, controller.signal);
+                await this.delay(50000, controller.signal);
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
