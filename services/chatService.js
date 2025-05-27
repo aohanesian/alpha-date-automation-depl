@@ -61,20 +61,18 @@ const chatService = {
 
                 if (allChats.length === 0) {
                     this.setProfileStatus(profileId, 'No chats found. Waiting before retry...');
-                    await this.delay(15000, controller.signal);
+                    await this.delay(50000, controller.signal);
                     continue;
                 }
 
                 // Filter out blocked chats
-                const filteredArray = allChats.filter(chat =>
+                const availableChats = allChats.filter(chat =>
                     !blockLists[profileId]?.includes(chat.chat_uid)
                 );
 
-                const availableChats = filteredArray.filter(item => item.female_block === 0)
-
                 if (availableChats.length === 0) {
                     this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
-                    await this.delay(15000, controller.signal);
+                    await this.delay(50000, controller.signal);
                     continue;
                 }
 
@@ -95,7 +93,7 @@ const chatService = {
 
                         if (needsFollowUp && recipientId) {
                             try {
-                                const success = await this.sendFollowUpMessage(
+                                await this.sendFollowUpMessage(
                                     profileId,
                                     recipientId,
                                     chat.chat_uid,
@@ -106,14 +104,11 @@ const chatService = {
 
                                 if (controller.signal.aborted) break;
 
-                                if (success) {
-                                    sentCount++;
-                                    this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
-                                } else {
-                                    this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Failed to send: ${sentCount} sent)`);
-                                }
-                                
-                                await this.delay(3000, controller.signal);
+                                this.addToBlockList(profileId, chat.chat_uid);
+                                sentCount++;
+
+                                this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
+                                await this.delay(4000, controller.signal);
                             } catch (error) {
                                 console.error(`Failed to send message to chat ${chat.chat_uid}:`, error);
                                 this.setProfileStatus(profileId, `Error sending to ${chat.chat_uid}: ${error.message}`);
@@ -128,7 +123,7 @@ const chatService = {
                 }
 
                 this.setProfileStatus(profileId, `Completed cycle: Sent ${sentCount}/${availableChats.length} messages. Waiting before next cycle...`);
-                await this.delay(15000, controller.signal);
+                await this.delay(50000, controller.signal);
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
@@ -239,31 +234,27 @@ const chatService = {
             if (data.response?.length > 0) {
                 const lastMessage = data.response[data.response.length - 1];
 
-                // Find the first message where we can determine the other party's ID
+                // Find the first ID that is not equal to profileId
+                let recipientId = null;
                 for (const message of data.response) {
-                    // If we are the recipient, return the sender's ID
-                    if (message.recipient_external_id === profileId && message.sender_external_id) {
-                        return {
-                            needsFollowUp: lastMessage.payed === 0 ||
-                                lastMessage.message_type === "SENT_LIKE" ||
-                                lastMessage.message_type === "SENT_WINK" ||
-                                lastMessage.message_content === "" ||
-                                lastMessage.message_price === "0.0000",
-                            recipientId: message.sender_external_id
-                        };
+                    if (message.recipient_external_id && message.recipient_external_id !== profileId) {
+                        recipientId = message.recipient_external_id;
+                        break;
                     }
-                    // If we are the sender, return the recipient's ID
-                    if (message.sender_external_id === profileId && message.recipient_external_id) {
-                        return {
-                            needsFollowUp: lastMessage.payed === 0 ||
-                                lastMessage.message_type === "SENT_LIKE" ||
-                                lastMessage.message_type === "SENT_WINK" ||
-                                lastMessage.message_content === "" ||
-                                lastMessage.message_price === "0.0000",
-                            recipientId: message.recipient_external_id
-                        };
+                    if (message.sender_external_id && message.sender_external_id !== profileId) {
+                        recipientId = message.sender_external_id;
+                        break;
                     }
                 }
+
+                return {
+                    needsFollowUp: lastMessage.payed === 0 ||
+                        lastMessage.message_type === "SENT_LIKE" ||
+                        lastMessage.message_type === "SENT_WINK" ||
+                        lastMessage.message_content === "" ||
+                        lastMessage.message_price === "0.0000",
+                    recipientId: recipientId
+                };
             }
 
             return { needsFollowUp: false, recipientId: null };
@@ -299,16 +290,7 @@ const chatService = {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            const data = await response.json();
-            
-            // Only add to block list if the API response indicates success
-            if (data.status === true && data.response?.message_object && data.response?.chat_list_object) {
-                this.addToBlockList(senderId, chatUid);
-                return true;
-            } else {
-                console.warn(`Message sent but API response indicates failure: ${JSON.stringify(data)}`);
-                return false;
-            }
+            return true;
         } catch (error) {
             if (error.name === 'AbortError') {
                 throw error;
