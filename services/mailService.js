@@ -276,9 +276,15 @@ const mailService = {
 
             const data = await response.json();
 
-            const lastMessage = data[response.length - 1];
+            const lastMessage = data.response[data.response.length - 1];
 
-            const recipientID = lastMessage.recipient_external_id === profileId ? sender_external_id : recipient_external_id
+            console.log("DATA", data)
+            console.log('DATA>RESPONSE', data.response)
+            console.log(lastMessage)
+
+            const recipientID = lastMessage.recipient_external_id === profileId
+                ? lastMessage.sender_external_id
+                : lastMessage.recipient_external_id;
 
             return recipientID;
 
