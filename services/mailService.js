@@ -276,22 +276,12 @@ const mailService = {
 
             const data = await response.json();
 
-            if (data.response?.length > 0) {
-                // Find the first message where we can determine the other party's ID
-                for (const message of data.response) {
-                    // If we are the recipient, return the sender's ID (the other party)
-                    if (message.recipient_external_id === profileId && message.sender_external_id) {
-                        return message.sender_external_id;
-                    }
-                    // If we are the sender, return the recipient's ID (the other party)
-                    if (message.sender_external_id === profileId && message.recipient_external_id) {
-                        return message.recipient_external_id;
-                    }
-                }
-            }
+            const lastMessage = data[response.length - 1];
 
-            console.warn(`Could not find valid recipient ID for chat ${chatUid}`);
-            return null;
+            const recipientID = lastMessage.recipient_external_id === profileId ? sender_external_id : recipient_external_id
+
+            return recipientID;
+
         } catch (error) {
             console.error('Failed to get recipient ID:', error);
             return null;
