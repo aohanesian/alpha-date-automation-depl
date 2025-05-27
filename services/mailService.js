@@ -113,7 +113,7 @@ const mailService = {
                     await this.delay(50000, controller.signal);
                     continue;
                 }
-                
+
                 // Filter out blocked recipients
                 const filteredArray = allChats.filter(chat =>
                     !mailBlockLists[profileId]?.includes(chat.recipient_external_id)
@@ -277,12 +277,13 @@ const mailService = {
             const data = await response.json();
 
             if (data.response?.length > 0) {
+                // Find the first message where we can determine the other party's ID
                 for (const message of data.response) {
-                    // If we are the recipient, return the sender's ID
+                    // If we are the recipient, return the sender's ID (the other party)
                     if (message.recipient_external_id === profileId && message.sender_external_id) {
                         return message.sender_external_id;
                     }
-                    // If we are the sender, return the recipient's ID
+                    // If we are the sender, return the recipient's ID (the other party)
                     if (message.sender_external_id === profileId && message.recipient_external_id) {
                         return message.recipient_external_id;
                     }
@@ -406,7 +407,7 @@ const mailService = {
             }
 
             const mailData = await mailResponse.json();
-            
+
             // Step 3: Delete draft after mail is sent (only if we had a draft)
             if (draftData?.result?.[0]) {
                 const deleteResponse = await fetch('https://alpha.date/api/mailbox/deletedraft', {
@@ -425,7 +426,7 @@ const mailService = {
                     console.warn('Failed to delete draft after sending mail');
                 }
             }
-            
+
             // Add to block list if the API response indicates success
             if (mailData.status === true && Array.isArray(mailData.message_id) && mailData.message_id.length > 0) {
                 this.addToBlockList(profileId, recipientId);
