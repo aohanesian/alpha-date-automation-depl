@@ -110,18 +110,20 @@ const mailService = {
 
                 if (allChats.length === 0) {
                     this.setProfileStatus(profileId, 'No chats found. Waiting before retry...');
-                    await this.delay(5000, controller.signal);
+                    await this.delay(15000, controller.signal);
                     continue;
                 }
-
+                
                 // Filter out blocked recipients
-                const availableChats = allChats.filter(chat =>
+                const filteredArray = allChats.filter(chat =>
                     !mailBlockLists[profileId]?.includes(chat.recipient_external_id)
                 );
 
+                const availableChats = filteredArray.filter(item => item.female_block === 0)
+
                 if (availableChats.length === 0) {
                     this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
-                    await this.delay(5000, controller.signal);
+                    await this.delay(15000, controller.signal);
                     continue;
                 }
 
@@ -154,8 +156,8 @@ const mailService = {
 
                     try {
                         await this.sendMail(profileId, recipientId, message, attachmentsList, token);
+                        // If we get here, the mail was sent (success or failure is handled in sendMail)
                         sent++;
-                        this.addToBlockList(profileId, recipientId);
                     } catch (error) {
                         console.error(`Failed to send mail to ${recipientId}:`, error);
                         this.setProfileStatus(profileId, `Error sending to ${recipientId}: ${error.message}`);
@@ -163,11 +165,11 @@ const mailService = {
                         skipped++;
                     }
 
-                    await this.delay(9000, controller.signal);
+                    await this.delay(7000, controller.signal);
                 }
 
                 this.setProfileStatus(profileId, `Completed cycle: ${sent} sent, ${skipped} skipped. Waiting before next cycle...`);
-                await this.delay(5000, controller.signal);
+                await this.delay(15000, controller.signal);
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
@@ -275,17 +277,19 @@ const mailService = {
             const data = await response.json();
 
             if (data.response?.length > 0) {
-                // Find the first ID that is not equal to profileId
                 for (const message of data.response) {
+                    // If we are the recipient, return the sender's ID
+                    if (message.recipient_external_id === profileId && message.sender_external_id) {
+                        return message.sender_external_id;
+                    }
+                    // If we are the sender, return the recipient's ID
                     if (message.recipient_external_id && message.recipient_external_id !== profileId) {
                         return message.recipient_external_id;
-                    }
-                    if (message.sender_external_id && message.sender_external_id !== profileId) {
-                        return message.sender_external_id;
                     }
                 }
             }
 
+            console.warn(`Could not find valid recipient ID for chat ${chatUid}`);
             return null;
         } catch (error) {
             console.error('Failed to get recipient ID:', error);
@@ -356,8 +360,8 @@ const mailService = {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                user_id: profileId,          // ← Remove String() conversion
-                recipients: [recipientId],   // ← Remove String() conversion
+                user_id: profileId,
+                recipients: [recipientId],
                 message_content: modifiedMsg,
                 attachments: attachments
             })
@@ -370,31 +374,13 @@ const mailService = {
         const draftData = await draftResponse.json();
         console.log('Draft creation response:', JSON.stringify(draftData, null, 2));
 
-        // Validate draft response
-        if (!draftData) {
-            throw new Error('Draft response is null or undefined');
+        // If draft creation failed, log and continue without draft
+        if (!draftData || !draftData.result || !Array.isArray(draftData.result) || draftData.result.length === 0) {
+            console.warn('Draft creation failed or returned empty result, proceeding without draft');
+        } else {
+            const draftId = draftData.result[0];
+            console.log('Using draft ID:', draftId);
         }
-
-        if (!draftData.status) {
-            throw new Error(`Draft creation failed: ${draftData.message || 'Unknown error'}`);
-        }
-
-        if (!draftData.result) {
-            console.error('Unexpected draft response structure:', draftData);
-            throw new Error('Draft response missing result field');
-        }
-
-        if (!Array.isArray(draftData.result)) {
-            console.error('result is not an array:', draftData.result);
-            throw new Error('Draft response result is not an array');
-        }
-
-        if (draftData.result.length === 0) {
-            throw new Error('Draft response result array is empty');
-        }
-
-        const draftId = draftData.result[0];
-        console.log('Using draft ID:', draftId);
 
         try {
             // Step 2: Send mail
@@ -405,8 +391,8 @@ const mailService = {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    user_id: profileId,          // ← Remove String() conversion
-                    recipients: [recipientId],   // ← Remove String() conversion
+                    user_id: profileId,
+                    recipients: [recipientId],
                     message_content: modifiedMsg,
                     message_type: "SENT_TEXT",
                     attachments: attachments,
@@ -419,24 +405,35 @@ const mailService = {
                 throw new Error(`Mail sending failed: ${mailResponse.status}`);
             }
 
-            // Step 3: Delete draft after mail is sent
-            const deleteResponse = await fetch('https://alpha.date/api/mailbox/deletedraft', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    user_id: profileId,     // ← Remove String() conversion
-                    draft_ids: [draftId]    // ← Keep as-is (already correct from API response)
-                })
-            });
+            const mailData = await mailResponse.json();
+            
+            // Step 3: Delete draft after mail is sent (only if we had a draft)
+            if (draftData?.result?.[0]) {
+                const deleteResponse = await fetch('https://alpha.date/api/mailbox/deletedraft', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_id: profileId,
+                        draft_ids: [draftData.result[0]]
+                    })
+                });
 
-            if (!deleteResponse.ok) {
-                console.warn('Failed to delete draft after sending mail');
+                if (!deleteResponse.ok) {
+                    console.warn('Failed to delete draft after sending mail');
+                }
+            }
+            
+            // Add to block list if the API response indicates success
+            if (mailData.status === true && Array.isArray(mailData.message_id) && mailData.message_id.length > 0) {
+                this.addToBlockList(profileId, recipientId);
+            } else {
+                console.warn(`Mail sent but API response indicates failure: ${JSON.stringify(mailData)}`);
             }
         } catch (error) {
-            throw error; // Re-throw the original error
+            throw error;
         }
     },
 

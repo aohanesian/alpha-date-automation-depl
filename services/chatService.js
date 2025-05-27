@@ -66,9 +66,11 @@ const chatService = {
                 }
 
                 // Filter out blocked chats
-                const availableChats = allChats.filter(chat =>
+                const filteredArray = allChats.filter(chat =>
                     !blockLists[profileId]?.includes(chat.chat_uid)
                 );
+
+                const availableChats = filteredArray.filter(item => item.female_block === 0)
 
                 if (availableChats.length === 0) {
                     this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
@@ -93,7 +95,7 @@ const chatService = {
 
                         if (needsFollowUp && recipientId) {
                             try {
-                                await this.sendFollowUpMessage(
+                                const success = await this.sendFollowUpMessage(
                                     profileId,
                                     recipientId,
                                     chat.chat_uid,
@@ -104,10 +106,13 @@ const chatService = {
 
                                 if (controller.signal.aborted) break;
 
-                                this.addToBlockList(profileId, chat.chat_uid);
-                                sentCount++;
-
-                                this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
+                                if (success) {
+                                    sentCount++;
+                                    this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
+                                } else {
+                                    this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Failed to send: ${sentCount} sent)`);
+                                }
+                                
                                 await this.delay(3000, controller.signal);
                             } catch (error) {
                                 console.error(`Failed to send message to chat ${chat.chat_uid}:`, error);
@@ -290,7 +295,16 @@ const chatService = {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            return true;
+            const data = await response.json();
+            
+            // Only add to block list if the API response indicates success
+            if (data.status === true && data.response?.message_object && data.response?.chat_list_object) {
+                this.addToBlockList(senderId, chatUid);
+                return true;
+            } else {
+                console.warn(`Message sent but API response indicates failure: ${JSON.stringify(data)}`);
+                return false;
+            }
         } catch (error) {
             if (error.name === 'AbortError') {
                 throw error;
