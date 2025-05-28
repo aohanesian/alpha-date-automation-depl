@@ -4,7 +4,7 @@ import fetch from 'node-fetch';
 // In-memory storage for processing state
 const processingProfiles = new Set();
 const abortControllers = new Map();
-const blockLists = {};
+const chatBlockLists = {};
 const statusMessages = {};
 
 const chatService = {
@@ -27,7 +27,6 @@ const chatService = {
 
     async startProfileProcessing(profileId, messageTemplate, token) {
         if (processingProfiles.has(profileId)) {
-            console.log(`Profile ${profileId} is already processing`);
             return;
         }
 
@@ -39,7 +38,7 @@ const chatService = {
         // Start processing in a non-blocking way
         this.processChatsForProfile(profileId, messageTemplate, token, controller)
             .catch(error => {
-                console.error(`Processing error for profile ${profileId}:`, error);
+                console.error(`Chat processing error for profile ${profileId}:`, error);
                 this.setProfileStatus(profileId, `Error: ${error.message}`);
                 this.cleanupProcessing(profileId);
             });
@@ -55,7 +54,7 @@ const chatService = {
 
                 // First, fetch all available chats from all pages
                 this.setProfileStatus(profileId, 'Fetching all available chats...');
-                const allChats = await this.fetchAllChats(profileId, token, controller.signal);
+                const allChats = await this.fetchAllChanceChats(profileId, token, controller.signal);
 
                 if (controller.signal.aborted) break;
 
@@ -65,10 +64,12 @@ const chatService = {
                     continue;
                 }
 
-                // Filter out blocked chats
-                const availableChats = allChats.filter(chat =>
-                    !blockLists[profileId]?.includes(chat.chat_uid)
+                // Filter out blocked recipients (same as mail service)
+                const filteredArray = allChats.filter(chat =>
+                    !chatBlockLists[profileId]?.includes(chat.recipient_external_id)
                 );
+
+                const availableChats = filteredArray.filter(item => item.female_block === 0);
 
                 if (availableChats.length === 0) {
                     this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
@@ -78,51 +79,46 @@ const chatService = {
 
                 this.setProfileStatus(profileId, `Processing ${availableChats.length} available chats (${allChats.length - availableChats.length} blocked)...`);
 
-                let sentCount = 0;
+                let sent = 0;
+                let skipped = 0;
 
-                for (let i = 0; i < availableChats.length; i++) {
-                    if (controller.signal.aborted) break;
+                for (const [index, chat] of availableChats.entries()) {
+                    if (controller.signal.aborted) {
+                        this.setProfileStatus(profileId, 'Processing stopped');
+                        break;
+                    }
 
-                    const chat = availableChats[i];
-                    this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
+                    this.setProfileStatus(profileId,
+                        `Processing ${index + 1}/${availableChats.length} (${sent} sent, ${skipped} skipped)`
+                    );
+
+                    const recipientId = await this.getRecipientId(chat.chat_uid, token, profileId);
+
+                    if (!recipientId) {
+                        skipped++;
+                        continue;
+                    }
+
+                    if (this.isBlocked(profileId, recipientId)) {
+                        skipped++;
+                        continue;
+                    }
 
                     try {
-                        const { needsFollowUp, recipientId } = await this.analyzeChat(chat.chat_uid, token, controller.signal, profileId);
-
-                        if (controller.signal.aborted) break;
-
-                        if (needsFollowUp && recipientId) {
-                            try {
-                                await this.sendFollowUpMessage(
-                                    profileId,
-                                    recipientId,
-                                    chat.chat_uid,
-                                    messageTemplate,
-                                    token,
-                                    controller.signal
-                                );
-
-                                if (controller.signal.aborted) break;
-
-                                this.addToBlockList(profileId, chat.chat_uid);
-                                sentCount++;
-
-                                this.setProfileStatus(profileId, `Processing ${i + 1}/${availableChats.length} chats... (Sent: ${sentCount})`);
-                                await this.delay(4000, controller.signal);
-                            } catch (error) {
-                                console.error(`Failed to send message to chat ${chat.chat_uid}:`, error);
-                                this.setProfileStatus(profileId, `Error sending to ${chat.chat_uid}: ${error.message}`);
-                                // Don't add to block list on error
-                                continue;
-                            }
-                        }
+                        await this.sendFollowUpMessage(profileId, recipientId, messageTemplate, token);
+                        // If we get here, the message was sent (success or failure is handled in sendFollowUpMessage)
+                        sent++;
                     } catch (error) {
-                        if (error.name === 'AbortError') break;
-                        console.error(`Error processing chat ${chat.chat_uid}:`, error);
+                        console.error(`Failed to send message to ${recipientId}:`, error);
+                        this.setProfileStatus(profileId, `Error sending to ${recipientId}: ${error.message}`);
+                        // Don't add to block list on error
+                        skipped++;
                     }
+
+                    await this.delay(7000, controller.signal);
                 }
 
-                this.setProfileStatus(profileId, `Completed cycle: Sent ${sentCount}/${availableChats.length} messages. Waiting before next cycle...`);
+                this.setProfileStatus(profileId, `Completed cycle: ${sent} sent, ${skipped} skipped. Waiting before next cycle...`);
                 await this.delay(50000, controller.signal);
             }
         } catch (error) {
@@ -134,7 +130,7 @@ const chatService = {
         }
     },
 
-    async fetchAllChats(profileId, token, signal) {
+    async fetchAllChanceChats(profileId, token, signal) {
         const allChats = [];
         let page = 1;
 
@@ -144,7 +140,7 @@ const chatService = {
                     throw new Error('Aborted');
                 }
 
-                console.log(`Fetching page ${page} for profile ${profileId}...`);
+                console.log(`Fetching chat page ${page} for profile ${profileId}...`);
 
                 const response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
                     method: 'POST',
@@ -213,7 +209,7 @@ const chatService = {
         });
     },
 
-    async analyzeChat(chatUid, token, signal, profileId) {
+    async getRecipientId(chatUid, token, profileId) {
         try {
             const response = await fetch('https://alpha.date/api/chatList/chatHistory', {
                 method: 'POST',
@@ -221,8 +217,7 @@ const chatService = {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ chat_id: chatUid, page: 1 }),
-                signal
+                body: JSON.stringify({ chat_id: chatUid, page: 1 })
             });
 
             if (!response.ok) {
@@ -231,43 +226,21 @@ const chatService = {
 
             const data = await response.json();
 
-            if (data.response?.length > 0) {
-                const lastMessage = data.response[data.response.length - 1];
+            const lastMessage = data.response[data.response.length - 1];
 
-                // Find the first ID that is not equal to profileId
-                let recipientId = null;
-                for (const message of data.response) {
-                    if (message.recipient_external_id && message.recipient_external_id !== profileId) {
-                        recipientId = message.recipient_external_id;
-                        break;
-                    }
-                    if (message.sender_external_id && message.sender_external_id !== profileId) {
-                        recipientId = message.sender_external_id;
-                        break;
-                    }
-                }
+            const recipientID = lastMessage.recipient_external_id === profileId
+                ? lastMessage.sender_external_id
+                : lastMessage.recipient_external_id;
 
-                return {
-                    needsFollowUp: lastMessage.payed === 0 ||
-                        lastMessage.message_type === "SENT_LIKE" ||
-                        lastMessage.message_type === "SENT_WINK" ||
-                        lastMessage.message_content === "" ||
-                        lastMessage.message_price === "0.0000",
-                    recipientId: recipientId
-                };
-            }
+            return recipientID;
 
-            return { needsFollowUp: false, recipientId: null };
         } catch (error) {
-            if (error.name === 'AbortError') {
-                throw error;
-            }
-            console.error('Chat analysis failed:', error);
-            return { needsFollowUp: false, recipientId: null };
+            console.error('Failed to get recipient ID:', error);
+            return null;
         }
     },
 
-    async sendFollowUpMessage(senderId, recipientId, chatUid, messageContent, token, signal) {
+    async sendFollowUpMessage(senderId, recipientId, messageContent, token) {
         try {
             const response = await fetch('https://alpha.date/api/chat/message', {
                 method: 'POST',
@@ -282,56 +255,52 @@ const chatService = {
                     message_type: "SENT_TEXT",
                     filename: "",
                     chance: true
-                }),
-                signal
+                })
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                throw new Error(`Message sending failed: ${response.status}`);
             }
 
-            return true;
-        } catch (error) {
-            if (error.name === 'AbortError') {
-                throw error;
+            const messageData = await response.json();
+
+            // Add to block list if the API response indicates success
+            if (messageData.status === true && messageData.response?.message_object && messageData.response?.chat_list_object) {
+                this.addToBlockList(senderId, recipientId);
+            } else {
+                this.setProfileStatus(`Message sent but API response indicates failure: ${JSON.stringify(messageData)}, ${senderId}, ${recipientId}`)
+                console.warn(`Message sent but API response indicates failure: ${JSON.stringify(messageData)}, ${senderId}, ${recipientId}`);
             }
-            console.error('Failed to send message:', error);
+        } catch (error) {
             throw error;
         }
     },
 
-    stopProfileProcessing(profileId) {
-        if (!processingProfiles.has(profileId)) return;
-
-        const controller = abortControllers.get(profileId);
-        if (!controller) return;
-
-        if (!controller.signal.aborted) {
-            controller.abort();
-        }
-
-        this.setProfileStatus(profileId, 'Stopping...');
+    isBlocked(profileId, recipientId) {
+        return chatBlockLists[profileId]?.includes(recipientId);
     },
 
-    addToBlockList(profileId, chatUid) {
-        if (!blockLists[profileId]) {
-            blockLists[profileId] = [];
+    addToBlockList(profileId, recipientId) {
+        if (!chatBlockLists[profileId]) chatBlockLists[profileId] = [];
+        if (!chatBlockLists[profileId].includes(recipientId)) {
+            chatBlockLists[profileId].push(recipientId);
         }
-        if (!blockLists[profileId].includes(chatUid)) {
-            blockLists[profileId].push(chatUid);
-        }
+    },
+
+    stopProfileProcessing(profileId) {
+        const controller = abortControllers.get(profileId);
+        if (controller) controller.abort();
+        processingProfiles.delete(profileId);
     },
 
     clearProfileBlockList(profileId) {
-        if (blockLists[profileId]) {
-            delete blockLists[profileId];
-            this.setProfileStatus(profileId, 'Block list cleared');
-        }
+        delete chatBlockLists[profileId];
+        this.setProfileStatus(profileId, 'Block list cleared');
     },
 
     setProfileStatus(profileId, message) {
         statusMessages[profileId] = message;
-        console.log(`Profile ${profileId}: ${message}`);
+        console.log(`Chat profile ${profileId}: ${message}`);
     },
 
     getProfileStatus(profileId) {

@@ -278,10 +278,6 @@ const mailService = {
 
             const lastMessage = data.response[data.response.length - 1];
 
-            console.log("DATA", data)
-            console.log('DATA>RESPONSE', data.response)
-            console.log(lastMessage)
-
             const recipientID = lastMessage.recipient_external_id === profileId
                 ? lastMessage.sender_external_id
                 : lastMessage.recipient_external_id;
@@ -427,7 +423,8 @@ const mailService = {
             if (mailData.status === true && Array.isArray(mailData.message_id) && mailData.message_id.length > 0) {
                 this.addToBlockList(profileId, recipientId);
             } else {
-                console.warn(`Mail sent but API response indicates failure: ${JSON.stringify(mailData)}`);
+                this.setProfileStatus(`Mail sent but API response indicates failure: ${JSON.stringify(mailData)}, ${senderId}, ${recipientId}, ${chatUid}`)
+                console.warn(`Mail sent but API response indicates failure: ${JSON.stringify(mailData)}, ${senderId}, ${recipientId}, ${chatUid}`);
             }
         } catch (error) {
             throw error;
