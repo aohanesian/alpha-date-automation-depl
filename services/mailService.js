@@ -343,7 +343,7 @@ const mailService = {
     },
 
     async sendMail(profileId, recipientId, message, attachments, token) {
-        const modifiedMsg = this.cyrillicReplacer(message);
+        // const modifiedMsg = this.cyrillicReplacer(message);
 
         // Step 1: Create draft
         const draftResponse = await fetch('https://alpha.date/api/mailbox/adddraft', {
@@ -355,7 +355,7 @@ const mailService = {
             body: JSON.stringify({
                 user_id: profileId,
                 recipients: [recipientId],
-                message_content: modifiedMsg,
+                message_content: message,
                 attachments: attachments
             })
         });
@@ -380,7 +380,7 @@ const mailService = {
             const payloadnail = {
                 user_id: profileId,
                 recipients: [recipientId],
-                message_content: modifiedMsg,
+                message_content: message,
                 message_type: "SENT_TEXT",
                 attachments: attachments,
                 parent_mail_id: null,
@@ -396,7 +396,7 @@ const mailService = {
                 body: JSON.stringify({
                     user_id: profileId,
                     recipients: [recipientId],
-                    message_content: modifiedMsg,
+                    message_content: message,
                     message_type: "SENT_TEXT",
                     attachments: attachments,
                     parent_mail_id: null,
