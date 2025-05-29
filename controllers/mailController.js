@@ -10,7 +10,6 @@ function extractToken(req, res, next) {
     const authHeader = req.get('Authorization');
     if (authHeader && authHeader.startsWith('Bearer ')) {
         req.token = authHeader.substring(7);
-        console.log('Token from Authorization header:', req.token);
         return next();
     }
 

@@ -69,7 +69,7 @@ const chatService = {
                     !chatBlockLists[profileId]?.includes(chat.recipient_external_id)
                 );
 
-                const availableChats = filteredArray.filter(item => item.female_block === 0);
+                const availableChats = filteredArray.filter(item => item.female_block === 0 && item.male_block === 0);
 
                 if (availableChats.length === 0) {
                     this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
@@ -110,7 +110,7 @@ const chatService = {
                         sent++;
                     } catch (error) {
                         console.error(`Failed to send message to ${recipientId}:`, error);
-                        this.setProfileStatus(profileId, `Error sending to ${recipientId}: ${error.message}`);
+                        // this.setProfileStatus(profileId, `Error sending to ${recipientId}: ${error.message}`);
                         // Don't add to block list on error
                         skipped++;
                     }
@@ -264,12 +264,14 @@ const chatService = {
 
             const messageData = await response.json();
 
-            // Add to block list if the API response indicates success
-            if (messageData.status === true && messageData.response?.message_object && messageData.response?.chat_list_object) {
+            const hasRestrictionError = messageData.error === "Restriction of sending a personal message. Try when the list becomes active";
+
+            // Add to block list only if response is ok AND it's not the specific restriction error
+            if (response.ok && !hasRestrictionError) {
                 this.addToBlockList(senderId, recipientId);
             } else {
-                this.setProfileStatus(`Message sent but API response indicates failure: ${JSON.stringify(messageData)}, ${senderId}, ${recipientId}`)
-                console.warn(`Message sent but API response indicates failure: ${JSON.stringify(messageData)}, ${senderId}, ${recipientId}`);
+                this.setProfileStatus(`Message sent but API response indicates failure: ${response.status}, ${senderId}, ${recipientId}`)
+                console.warn(`Message sent but API response indicates failure: ${response.status}, ${senderId}, ${recipientId}`);
             }
         } catch (error) {
             throw error;

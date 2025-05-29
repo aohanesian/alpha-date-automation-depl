@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     loginForm.style.display = 'none';
                     mainContainer.style.display = 'block';
                     await loadProfiles();
-                    // setupOnlineStatusInterval();
+                    setupOnlineStatusInterval();
                     loginStatus.textContent = 'Session restored successfully!';
                     loginStatus.className = 'status success';
                 } else {
@@ -199,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 await loadProfiles();
 
                 // Set up online status interval
-                // setupOnlineStatusInterval();
+                setupOnlineStatusInterval();
 
                 loginStatus.textContent = 'Login successful!';
                 loginStatus.className = 'status success';
