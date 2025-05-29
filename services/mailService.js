@@ -26,8 +26,8 @@ const mailService = {
         }
     },
 
-    async getAttachments(profileId, token) {
-        if (attachmentsCache.has(profileId)) {
+    async getAttachments(profileId, token, forceRefresh = false) {
+        if (!forceRefresh && attachmentsCache.has(profileId)) {
             return attachmentsCache.get(profileId);
         }
 
@@ -343,7 +343,30 @@ const mailService = {
     },
 
     async sendMail(profileId, recipientId, message, attachments, token) {
-        // const modifiedMsg = this.cyrillicReplacer(message);
+        // Format attachments according to API requirements
+        const formattedAttachments = attachments.map(attachment => {
+            if (!attachment || !attachment.filename || !attachment.link) {
+                console.warn('Invalid attachment:', attachment);
+                return null;
+            }
+
+            const baseAttachment = {
+                title: attachment.filename,
+                link: attachment.link,
+                message_type: attachment.content_type === 'image' ? 'SENT_IMAGE' :
+                           attachment.content_type === 'video' ? 'SENT_VIDEO' :
+                           'SENT_AUDIO'
+            };
+
+            // Add id only for videos
+            if (attachment.content_type === 'video' && attachment.id) {
+                baseAttachment.id = attachment.id;
+            }
+
+            return baseAttachment;
+        }).filter(attachment => attachment !== null); // Remove any invalid attachments
+
+        console.log('Formatted attachments:', formattedAttachments);
 
         // Step 1: Create draft
         const draftResponse = await fetch('https://alpha.date/api/mailbox/adddraft', {
@@ -356,7 +379,7 @@ const mailService = {
                 user_id: profileId,
                 recipients: [recipientId],
                 message_content: message,
-                attachments: attachments
+                attachments: formattedAttachments
             })
         });
 
@@ -377,15 +400,17 @@ const mailService = {
 
         try {
             // Step 2: Send mail
-            const payloadnail = {
+            const payload = {
                 user_id: profileId,
                 recipients: [recipientId],
                 message_content: message,
                 message_type: "SENT_TEXT",
-                attachments: attachments,
+                attachments: formattedAttachments,
                 parent_mail_id: null,
                 is_send_email: false
             };
+
+            console.log('Sending mail with payload:', JSON.stringify(payload, null, 2));
 
             const mailResponse = await fetch('https://alpha.date/api/mailbox/mail', {
                 method: 'POST',
@@ -393,15 +418,7 @@ const mailService = {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    user_id: profileId,
-                    recipients: [recipientId],
-                    message_content: message,
-                    message_type: "SENT_TEXT",
-                    attachments: attachments,
-                    parent_mail_id: null,
-                    is_send_email: false
-                })
+                body: JSON.stringify(payload)
             });
 
             if (!mailResponse.ok) {
@@ -410,7 +427,7 @@ const mailService = {
 
             const mailData = await mailResponse.json();
 
-            console.log(`mailData response: ${JSON.stringify(draftData, null, 2)} profile ${profileId} man ${recipientId}`);
+            console.log(`mailData response: ${JSON.stringify(mailData, null, 2)} profile ${profileId} man ${recipientId}`);
 
             // Step 3: Delete draft after mail is sent (only if we had a draft)
             if (draftData?.result?.[0]) {
@@ -432,14 +449,13 @@ const mailService = {
             }
 
             if (mailResponse.ok) {
-                console.log('mail response:', mailData, 'mail payload:', payloadnail)
+                console.log('mail response:', mailData, 'mail payload:', payload);
             }
 
             // Add to block list if the API response indicates success
-            if (mailResponse.ok && mailData.status === true) {
+            if (mailResponse.ok) {
                 this.addToBlockList(profileId, recipientId);
             } else {
-                // this.setProfileStatus(`Mail sent but API response indicates failure: ${mailResponse.status}, ${profileId}, ${recipientId}, ${mailData}`)
                 console.warn(`Mail sent but API response indicates failure: ${mailResponse.status}, ${profileId}, ${recipientId}, ${mailData}`);
             }
         } catch (error) {
@@ -481,6 +497,14 @@ const mailService = {
     cleanupProcessing(profileId) {
         processingProfiles.delete(profileId);
         abortControllers.delete(profileId);
+    },
+
+    clearAttachmentsCache(profileId) {
+        if (profileId) {
+            attachmentsCache.delete(profileId);
+        } else {
+            attachmentsCache.clear();
+        }
     }
 };
 

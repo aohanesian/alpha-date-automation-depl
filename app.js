@@ -500,10 +500,39 @@ document.addEventListener('DOMContentLoaded', () => {
             const attachmentsContainer = document.createElement('div');
             attachmentsContainer.className = 'attachments-container';
             attachmentsContainer.style.display = 'none';
-            attachmentsContainer.innerHTML = '<div class="status">Loading attachments...</div>';
+            
+            // Create a wrapper for attachments content
+            const attachmentsContent = document.createElement('div');
+            attachmentsContent.className = 'attachments-grid';
+            attachmentsContent.style.display = 'grid';
+            attachmentsContent.innerHTML = '<div class="status">Loading attachments...</div>';
+            
+            // Add refresh button
+            const refreshBtn = document.createElement('button');
+            refreshBtn.textContent = '🔄 Refresh Attachments';
+            refreshBtn.className = 'control-btn btn-refresh';
+            refreshBtn.style.marginBottom = '10px';
+            refreshBtn.style.color = 'black';
+            refreshBtn.addEventListener('click', () => {
+                loadAttachments(profile.external_id, attachmentsContent);
+            });
+            
+            // Add both elements to container
+            profileBlock.appendChild(refreshBtn);
+            attachmentsContainer.appendChild(attachmentsContent);
 
             // Load attachments
-            loadAttachments(profile.external_id, attachmentsContainer);
+            loadAttachments(profile.external_id, attachmentsContent);
+
+            // Toggle attachments display
+            if (toggleAttachments) {
+                toggleAttachments.addEventListener('change', () => {
+                    const containers = document.querySelectorAll('.attachments-container');
+                    containers.forEach(container => {
+                        container.style.display = toggleAttachments.checked ? 'block' : 'none';
+                    });
+                });
+            }
 
             // Status
             const status = document.createElement('div');
@@ -543,31 +572,35 @@ document.addEventListener('DOMContentLoaded', () => {
             profileBlock.append(header, textarea, charCounter, attachmentsContainer, status, controls);
             mailProfilesContainer.appendChild(profileBlock);
         });
-
-        // Toggle attachments display
-        if (toggleAttachments) {
-            toggleAttachments.addEventListener('change', () => {
-                const containers = document.querySelectorAll('.attachments-container');
-                containers.forEach(container => {
-                    container.style.display = toggleAttachments.checked ? 'grid' : 'none';
-                });
-            });
-        }
     }
 
     // Load attachments for mail profile
     async function loadAttachments(profileId, container) {
         try {
-            const response = await makeAuthenticatedRequest(`${API_URL}/mail/attachments/${profileId}`);
+            // Show loading state
+            const statusDiv = container.querySelector('.status') || document.createElement('div');
+            statusDiv.className = 'status';
+            statusDiv.textContent = 'Loading attachments...';
+            if (!container.contains(statusDiv)) {
+                container.appendChild(statusDiv);
+            }
+
+            const response = await makeAuthenticatedRequest(`${API_URL}/mail/attachments/${profileId}?forceRefresh=true`);
 
             if (response.status === 401) {
-                container.innerHTML = '<div class="status error">Session expired</div>';
+                statusDiv.textContent = 'Session expired';
+                statusDiv.className = 'status error';
                 return;
             }
 
             const data = await response.json();
+            console.log('Attachments response:', data); // Debug log
 
             if (data.success) {
+                // Clear existing content
+                container.innerHTML = '';
+                
+                // Render new attachments
                 renderAttachments(data.attachments, container);
             } else {
                 container.innerHTML = '<div class="status error">Failed to load attachments</div>';
@@ -580,7 +613,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Render attachments
     function renderAttachments(attachments, container) {
-        container.innerHTML = '';
+        if (!attachments) {
+            container.innerHTML = '<div class="status">No attachments available</div>';
+            return;
+        }
+
         let hasAttachments = false;
 
         Object.entries(attachments).forEach(([type, items]) => {
@@ -614,8 +651,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';
                     checkbox.className = 'attachment-checkbox';
-                    checkbox.dataset.type = type;
                     checkbox.dataset.id = item.id;
+                    checkbox.dataset.type = type;
+                    checkbox.dataset.filename = item.filename;
+                    checkbox.dataset.link = item.link;
 
                     const filename = document.createElement('div');
                     filename.className = 'attachment-filename';
@@ -702,10 +741,32 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Get selected attachments
-        const attachments = Array.from(attachmentsContainer.querySelectorAll('input:checked')).map(checkbox => ({
-            id: checkbox.dataset.id,
-            type: checkbox.dataset.type
-        }));
+        const attachments = Array.from(attachmentsContainer.querySelectorAll('input:checked')).map(checkbox => {
+            const attachmentItem = checkbox.closest('.attachment-item');
+            const filename = attachmentItem.querySelector('.attachment-filename').textContent;
+            const preview = attachmentItem.querySelector('.attachment-preview');
+            
+            // Get link based on attachment type
+            let link;
+            if (checkbox.dataset.type === 'audios') {
+                // For audio files, get link from data attribute
+                link = checkbox.dataset.link;
+            } else {
+                // For images and videos, get link from img src
+                const img = preview.querySelector('img');
+                link = img ? img.src : null;
+            }
+            
+            return {
+                id: checkbox.dataset.id,
+                type: checkbox.dataset.type,
+                filename: filename,
+                link: link,
+                content_type: checkbox.dataset.type === 'images' ? 'image' :
+                            checkbox.dataset.type === 'videos' ? 'video' :
+                            'audio'
+            };
+        });
 
         try {
             status.textContent = 'Starting...';

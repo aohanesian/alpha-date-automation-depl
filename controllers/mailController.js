@@ -66,13 +66,14 @@ router.get('/profiles', async (req, res) => {
 router.get('/attachments/:profileId', async (req, res) => {
     try {
         const { profileId } = req.params;
+        const { forceRefresh } = req.query;
         const token = req.token;
 
         if (!token) {
             return res.status(401).json({ success: false, message: 'Not authenticated' });
         }
 
-        const attachments = await mailService.getAttachments(profileId, token);
+        const attachments = await mailService.getAttachments(profileId, token, forceRefresh === 'true');
         res.json({ success: true, attachments });
     } catch (error) {
         console.error('Get attachments error:', error);
