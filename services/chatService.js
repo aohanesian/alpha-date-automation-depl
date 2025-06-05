@@ -6,6 +6,8 @@ const processingProfiles = new Set();
 const abortControllers = new Map();
 const chatBlockLists = {};
 const statusMessages = {};
+const invites = {};
+
 
 const chatService = {
     async getProfiles(token) {
@@ -30,10 +32,11 @@ const chatService = {
             return;
         }
 
+        invites[profileId] = messageTemplate;
         const controller = new AbortController();
         abortControllers.set(profileId, controller);
         processingProfiles.add(profileId);
-        this.setProfileStatus(profileId, 'Starting...');
+        this.setProfileStatus(profileId, 'processing');
 
         // Start processing in a non-blocking way
         this.processChatsForProfile(profileId, messageTemplate, token, controller)
@@ -53,13 +56,13 @@ const chatService = {
                 }
 
                 // First, fetch all available chats from all pages
-                this.setProfileStatus(profileId, 'Fetching all available chats...');
+                this.setProfileStatus(profileId, 'processing');
                 const allChats = await this.fetchAllChanceChats(profileId, token, controller.signal);
 
                 if (controller.signal.aborted) break;
 
                 if (allChats.length === 0) {
-                    this.setProfileStatus(profileId, 'No chats found. Waiting before retry...');
+                    this.setProfileStatus(profileId, 'processing');
                     await this.delay(50000, controller.signal);
                     continue;
                 }
@@ -72,12 +75,12 @@ const chatService = {
                 const availableChats = filteredArray.filter(item => item.female_block === 0 && item.male_block === 0);
 
                 if (availableChats.length === 0) {
-                    this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
+                    this.setProfileStatus(profileId, `processing`);
                     await this.delay(50000, controller.signal);
                     continue;
                 }
 
-                this.setProfileStatus(profileId, `Processing ${availableChats.length} available chats (${allChats.length - availableChats.length} blocked)...`);
+                this.setProfileStatus(profileId, `processing`);
 
                 let sent = 0;
                 let skipped = 0;
@@ -89,7 +92,7 @@ const chatService = {
                     }
 
                     this.setProfileStatus(profileId,
-                        `Processing ${index + 1}/${availableChats.length} (${sent} sent, ${skipped} skipped)`
+                        `processing`
                     );
 
                     const recipientId = await this.getRecipientId(chat.chat_uid, token, profileId);
@@ -105,20 +108,35 @@ const chatService = {
                     }
 
                     try {
-                        await this.sendFollowUpMessage(profileId, recipientId, messageTemplate, token);
-                        // If we get here, the message was sent (success or failure is handled in sendFollowUpMessage)
-                        sent++;
+                        const result = await this.sendFollowUpMessage(profileId, recipientId, messageTemplate, token);
+
+                        // Handle different response types
+                        if (result.success) {
+                            sent++;
+                        } else if (result.rateLimited) {
+                            // Rate limited - wait and continue processing
+                            this.setProfileStatus(profileId, 'processing');
+                            await this.delay(50000, controller.signal);
+                            // Don't increment counters, retry this message
+                            continue;
+                        } else if (result.shouldStop) {
+                            // Fatal error - stop processing
+                            this.setProfileStatus(profileId, `Stopping due to: ${result.error}`);
+                            return;
+                        } else {
+                            // Other error - skip this message
+                            skipped++;
+                        }
                     } catch (error) {
                         console.error(`Failed to send message to ${recipientId}:`, error);
-                        // this.setProfileStatus(profileId, `Error sending to ${recipientId}: ${error.message}`);
-                        // Don't add to block list on error
                         skipped++;
                     }
 
+                    // Normal delay between messages (skip if we just did a rate limit delay)
                     await this.delay(7000, controller.signal);
                 }
 
-                this.setProfileStatus(profileId, `Completed cycle: ${sent} sent, ${skipped} skipped. Waiting before next cycle...`);
+                this.setProfileStatus(profileId, `processing`);
                 await this.delay(50000, controller.signal);
             }
         } catch (error) {
@@ -226,7 +244,11 @@ const chatService = {
 
             const data = await response.json();
 
+            console.log('Chat history data:', data);
+
             const lastMessage = data.response[data.response.length - 1];
+
+            console.log('Last message:', lastMessage);
 
             const recipientID = lastMessage.recipient_external_id === profileId
                 ? lastMessage.sender_external_id
@@ -258,23 +280,55 @@ const chatService = {
                 })
             });
 
-            if (!response.ok) {
-                throw new Error(`Message sending failed: ${response.status}`);
-            }
-
             const messageData = await response.json();
-
             const hasRestrictionError = messageData.error === "Restriction of sending a personal message. Try when the list becomes active";
 
-            // Add to block list only if response is ok AND it's not the specific restriction error
-            if (response.ok && !hasRestrictionError) {
-                this.addToBlockList(senderId, recipientId);
-            } else {
-                this.setProfileStatus(`Message sent but API response indicates failure: ${response.status}, ${senderId}, ${recipientId}`)
-                console.warn(`Message sent but API response indicates failure: ${response.status}, ${senderId}, ${recipientId}`);
+            // Handle different HTTP status codes
+            if (response.status === 429) {
+                // Rate limited - return signal to wait and retry
+                return {
+                    success: false,
+                    rateLimited: true,
+                    error: 'Rate limited'
+                };
             }
+
+            if (response.status === 400 || response.status === 401 || messageData.error === "Not your profile") {
+                // Fatal errors - stop processing entirely
+                return {
+                    success: false,
+                    shouldStop: true,
+                    error: `Fatal error: ${response.status} - ${messageData.error || response.statusText}`
+                };
+            }
+
+            if (!response.ok) {
+                // Other HTTP errors - skip this message but continue processing
+                return {
+                    success: false,
+                    error: `HTTP ${response.status}: ${response.statusText}`
+                };
+            }
+
+            // Response is OK - check for API-level errors
+            if (hasRestrictionError) {
+                // Restriction error - skip this recipient but don't add to block list
+                return {
+                    success: false,
+                    error: 'Recipient restriction'
+                };
+            }
+
+            // Success - add to block list to avoid sending again
+            this.addToBlockList(senderId, recipientId);
+            return { success: true };
+
         } catch (error) {
-            throw error;
+            // Network or other errors
+            return {
+                success: false,
+                error: error.message
+            };
         }
     },
 
@@ -293,6 +347,7 @@ const chatService = {
         const controller = abortControllers.get(profileId);
         if (controller) controller.abort();
         processingProfiles.delete(profileId);
+        this.setProfileStatus(profileId, 'Ready');
     },
 
     clearProfileBlockList(profileId) {
@@ -307,6 +362,10 @@ const chatService = {
 
     getProfileStatus(profileId) {
         return statusMessages[profileId] || 'Ready';
+    },
+
+    getProfileMessage(profileId) {
+        return invites[profileId] || null;
     },
 
     cleanupProcessing(profileId) {

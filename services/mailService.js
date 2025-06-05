@@ -7,6 +7,7 @@ const abortControllers = new Map();
 const mailBlockLists = {};
 const attachmentsCache = new Map();
 const statusMessages = {};
+const invites = {};
 
 const mailService = {
     async getProfiles(token) {
@@ -80,10 +81,11 @@ const mailService = {
             return;
         }
 
+        invites[profileId] = message;
         const controller = new AbortController();
         abortControllers.set(profileId, controller);
         processingProfiles.add(profileId);
-        this.setProfileStatus(profileId, 'Starting...');
+        this.setProfileStatus(profileId, 'processing');
 
         // Start processing in a non-blocking way
         this.processMailsForProfile(profileId, message, attachmentsList, token, controller)
@@ -103,13 +105,13 @@ const mailService = {
                 }
 
                 // First, fetch all available chats from all pages
-                this.setProfileStatus(profileId, 'Fetching all available chats...');
+                this.setProfileStatus(profileId, 'processing');
                 const allChats = await this.fetchAllChanceChats(profileId, token, controller.signal);
 
                 if (controller.signal.aborted) break;
 
                 if (allChats.length === 0) {
-                    this.setProfileStatus(profileId, 'No chats found. Waiting before retry...');
+                    this.setProfileStatus(profileId, 'processing');
                     await this.delay(50000, controller.signal);
                     continue;
                 }
@@ -122,12 +124,12 @@ const mailService = {
                 const availableChats = filteredArray.filter(item => item.female_block === 0 && item.male_block === 0);
 
                 if (availableChats.length === 0) {
-                    this.setProfileStatus(profileId, `All ${allChats.length} chats are blocked. Waiting before retry...`);
+                    this.setProfileStatus(profileId, `processing`);
                     await this.delay(50000, controller.signal);
                     continue;
                 }
 
-                this.setProfileStatus(profileId, `Processing ${availableChats.length} available chats (${allChats.length - availableChats.length} blocked)...`);
+                this.setProfileStatus(profileId, `processing`);
 
                 let sent = 0;
                 let skipped = 0;
@@ -139,7 +141,7 @@ const mailService = {
                     }
 
                     this.setProfileStatus(profileId,
-                        `Processing ${index + 1}/${availableChats.length} (${sent} sent, ${skipped} skipped)`
+                        `processing`
                     );
 
                     const recipientId = await this.getRecipientId(chat.chat_uid, token, profileId);
@@ -155,20 +157,35 @@ const mailService = {
                     }
 
                     try {
-                        await this.sendMail(profileId, recipientId, message, attachmentsList, token);
-                        // If we get here, the mail was sent (success or failure is handled in sendMail)
-                        sent++;
+                        const result = await this.sendMail(profileId, recipientId, message, attachmentsList, token);
+
+                        // Handle different response types
+                        if (result.success) {
+                            sent++;
+                        } else if (result.rateLimited) {
+                            // Rate limited - wait and continue processing
+                            this.setProfileStatus(profileId, 'processing');
+                            await this.delay(50000, controller.signal);
+                            // Don't increment counters, retry this message
+                            continue;
+                        } else if (result.shouldStop) {
+                            // Fatal error - stop processing
+                            this.setProfileStatus(profileId, `Stopping due to: ${result.error}`);
+                            return;
+                        } else {
+                            // Other error - skip this message
+                            skipped++;
+                        }
                     } catch (error) {
                         console.error(`Failed to send mail to ${recipientId}:`, error);
-                        // this.setProfileStatus(profileId, `Error sending to ${recipientId}: ${error.message}`);
-                        // Don't add to block list on error
                         skipped++;
                     }
 
+                    // Normal delay between messages (skip if we just did a rate limit delay)
                     await this.delay(7000, controller.signal);
                 }
 
-                this.setProfileStatus(profileId, `Completed cycle: ${sent} sent, ${skipped} skipped. Waiting before next cycle...`);
+                this.setProfileStatus(profileId, `processing`);
                 await this.delay(50000, controller.signal);
             }
         } catch (error) {
@@ -290,58 +307,6 @@ const mailService = {
         }
     },
 
-    cyrillicReplacer(inputString) {
-        const charMap = {
-            'a': 'а', // Cyrillic 'а'
-            'e': 'е', // Cyrillic 'е'
-            'o': 'о', // Cyrillic 'о'
-            'c': 'с', // Cyrillic 'с'
-            'i': 'і', // Cyrillic 'і'
-            'd': 'ԁ', // Cyrillic 'ԁ'
-            's': 'ѕ', // Cyrillic 'ѕ'
-            'x': 'х', // Cyrillic 'х'
-            'p': 'р'  // Cyrillic 'р'
-        };
-
-        const chars = inputString.split('');
-        const replaceableIndices = [];
-
-        for (let i = 0; i < chars.length; i++) {
-            if (charMap.hasOwnProperty(chars[i].toLowerCase())) {
-                replaceableIndices.push(i);
-            }
-        }
-
-        if (replaceableIndices.length === 0) {
-            return inputString;
-        }
-
-        const numToReplace = Math.min(
-            Math.floor(Math.random() * 5) + 1,
-            replaceableIndices.length
-        );
-
-        for (let i = replaceableIndices.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [replaceableIndices[i], replaceableIndices[j]] = [replaceableIndices[j], replaceableIndices[i]];
-        }
-
-        const indicesToReplace = replaceableIndices.slice(0, numToReplace);
-
-        for (const index of indicesToReplace) {
-            const originalChar = chars[index].toLowerCase();
-            if (charMap[originalChar]) {
-                if (chars[index] === chars[index].toUpperCase()) {
-                    chars[index] = charMap[originalChar].toUpperCase();
-                } else {
-                    chars[index] = charMap[originalChar];
-                }
-            }
-        }
-
-        return chars.join('');
-    },
-
     async sendMail(profileId, recipientId, message, attachments, token) {
         // Format attachments according to API requirements
         const formattedAttachments = attachments.map(attachment => {
@@ -354,8 +319,8 @@ const mailService = {
                 title: attachment.filename,
                 link: attachment.link,
                 message_type: attachment.content_type === 'image' ? 'SENT_IMAGE' :
-                           attachment.content_type === 'video' ? 'SENT_VIDEO' :
-                           'SENT_AUDIO'
+                    attachment.content_type === 'video' ? 'SENT_VIDEO' :
+                        'SENT_AUDIO'
             };
 
             // Add id only for videos
@@ -368,38 +333,7 @@ const mailService = {
 
         console.log('Formatted attachments:', formattedAttachments);
 
-        // Step 1: Create draft
-        const draftResponse = await fetch('https://alpha.date/api/mailbox/adddraft', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                user_id: profileId,
-                recipients: [recipientId],
-                message_content: message,
-                attachments: formattedAttachments
-            })
-        });
-
-        if (!draftResponse.ok) {
-            throw new Error(`Draft creation failed with status: ${draftResponse.status}`);
-        }
-
-        const draftData = await draftResponse.json();
-        console.log(`Draft creation response: ${JSON.stringify(draftData, null, 2)} profile ${profileId} man ${recipientId}`);
-
-        // If draft creation failed, log and continue without draft
-        if (!draftData || !draftData.result || !Array.isArray(draftData.result) || draftData.result.length === 0) {
-            console.warn('Draft creation failed or returned empty result, proceeding without draft');
-        } else {
-            const draftId = draftData.result[0];
-            console.log('Using draft ID:', draftId);
-        }
-
         try {
-            // Step 2: Send mail
             const payload = {
                 user_id: profileId,
                 recipients: [recipientId],
@@ -421,45 +355,57 @@ const mailService = {
                 body: JSON.stringify(payload)
             });
 
-            if (!mailResponse.ok) {
-                throw new Error(`Mail sending failed: ${mailResponse.status}`);
-            }
-
             const mailData = await mailResponse.json();
-
             console.log(`mailData response: ${JSON.stringify(mailData, null, 2)} profile ${profileId} man ${recipientId}`);
 
-            // Step 3: Delete draft after mail is sent (only if we had a draft)
-            if (draftData?.result?.[0]) {
-                const deleteResponse = await fetch('https://alpha.date/api/mailbox/deletedraft', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        user_id: profileId,
-                        draft_ids: [draftData.result[0]]
-                    })
-                });
+            const hasRestrictionError = mailData.error === "Restriction of sending a personal letter. Try when the list becomes active";
 
-                if (!deleteResponse.ok) {
-                    console.warn('Failed to delete draft after sending mail');
-                }
+            // Handle different HTTP status codes
+            if (mailResponse.status === 429) {
+                // Rate limited - return signal to wait and retry
+                return {
+                    success: false,
+                    rateLimited: true,
+                    error: 'Rate limited'
+                };
             }
 
-            if (mailResponse.ok) {
-                console.log('mail response:', mailData, 'mail payload:', payload);
+            if (mailResponse.status === 400 || mailResponse.status === 401 || mailData.error === "Not your profile") {
+                // Fatal errors - stop processing entirely
+                return {
+                    success: false,
+                    shouldStop: true,
+                    error: `Fatal error: ${mailResponse.status} - ${mailData.error || mailResponse.statusText}`
+                };
             }
 
-            // Add to block list if the API response indicates success
-            if (mailResponse.ok) {
-                this.addToBlockList(profileId, recipientId);
-            } else {
-                console.warn(`Mail sent but API response indicates failure: ${mailResponse.status}, ${profileId}, ${recipientId}, ${mailData}`);
+            if (!mailResponse.ok) {
+                // Other HTTP errors - skip this message but continue processing
+                return {
+                    success: false,
+                    error: `HTTP ${mailResponse.status}: ${mailResponse.statusText}`
+                };
             }
+
+            // Response is OK - check for API-level errors
+            if (hasRestrictionError) {
+                // Restriction error - skip this recipient but don't add to block list
+                return {
+                    success: false,
+                    error: 'Recipient restriction'
+                };
+            }
+
+            // Success - add to block list to avoid sending again
+            this.addToBlockList(profileId, recipientId);
+            return { success: true };
+
         } catch (error) {
-            throw error;
+            // Network or other errors
+            return {
+                success: false,
+                error: error.message
+            };
         }
     },
 
@@ -492,6 +438,10 @@ const mailService = {
 
     getProcessingStatus(profileId) {
         return statusMessages[profileId] || 'Ready';
+    },
+
+    getProfileMessage(profileId) {
+        return invites[profileId] || null;
     },
 
     cleanupProcessing(profileId) {

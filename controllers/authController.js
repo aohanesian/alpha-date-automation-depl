@@ -26,6 +26,9 @@ router.post('/check-whitelist', async (req, res) => {
             req.session.email = email;
             req.session.token = token;
 
+            // Start server-side online heartbeat
+            authService.startOperatorOnlineHeartbeat(req.session.operatorId || req.session.email, token);
+
             // Force session save
             req.session.save((err) => {
                 if (err) {

@@ -120,7 +120,8 @@ router.get('/status/:profileId', (req, res) => {
     try {
         const { profileId } = req.params;
         const status = chatService.getProfileStatus(profileId);
-        res.json({ success: true, status });
+        const invite = chatService.getProfileMessage(profileId)
+        res.json({ success: true, status, invite });
     } catch (error) {
         console.error('Get status error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
