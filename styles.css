@@ -513,3 +513,15 @@ body.dark-mode textarea:disabled,
 body.dark-mode input:disabled {
     opacity: 0.6;
 }
+
+/* Highlight selected attachment preview */
+.attachment-preview.selected {
+    outline: 2px solid #007bff;
+    box-shadow: 0 0 0 2px #007bff33;
+    background: #e3f0ff;
+}
+body.dark-mode .attachment-preview.selected {
+    outline: 2px solid #90caf9;
+    box-shadow: 0 0 0 2px #1976d233;
+    background: #1a233a;
+}

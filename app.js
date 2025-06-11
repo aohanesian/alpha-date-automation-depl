@@ -954,8 +954,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     checkbox.dataset.type = type;
                     checkbox.dataset.filename = item.filename;
                     checkbox.dataset.link = item.link;
-                    checkbox.addEventListener('change', updateAttachmentLimit);
+                    checkbox.addEventListener('change', () => {
+                        updateAttachmentLimit();
+                        // Highlight preview if checked
+                        if (checkbox.checked) {
+                            preview.classList.add('selected');
+                        } else {
+                            preview.classList.remove('selected');
+                        }
+                    });
                     allCheckboxes.push(checkbox);
+
+                    // Make preview clickable to toggle checkbox
+                    preview.addEventListener('click', (e) => {
+                        // Prevent double toggle if click is on checkbox
+                        if (e.target === checkbox) return;
+                        if (checkbox.disabled) return;
+                        checkbox.checked = !checkbox.checked;
+                        // Trigger change event for logic and highlight
+                        checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                    });
+
+                    // Initial highlight if already checked
+                    if (checkbox.checked) {
+                        preview.classList.add('selected');
+                    }
 
                     const filename = document.createElement('div');
                     filename.className = 'attachment-filename';
