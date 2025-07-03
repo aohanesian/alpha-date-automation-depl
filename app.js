@@ -733,14 +733,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const attachments = Array.from(attachmentsContainer.querySelectorAll('input:checked')).map(checkbox => {
                             const attachmentItem = checkbox.closest('.attachment-item');
                             const filename = attachmentItem.querySelector('.attachment-filename').textContent;
-                            const preview = attachmentItem.querySelector('.attachment-preview');
-                            let link;
-                            if (checkbox.dataset.type === 'audios') {
-                                link = checkbox.dataset.link;
-                            } else {
-                                const img = preview.querySelector('img');
-                                link = img ? img.src : null;
-                            }
+                            // Always use the original link from dataset, not the img.src which might be thumbnail
+                            const link = checkbox.dataset.link;
                             return {
                                 id: checkbox.dataset.id,
                                 type: checkbox.dataset.type,
