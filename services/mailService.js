@@ -81,7 +81,8 @@ const mailService = {
             return;
         }
 
-        invites[profileId] = message;
+        // Store both message and attachments for syncing
+        invites[profileId] = { message, attachments: attachmentsList };
         const controller = new AbortController();
         abortControllers.set(profileId, controller);
         processingProfiles.add(profileId);
@@ -121,7 +122,7 @@ const mailService = {
                     !mailBlockLists[profileId]?.includes(chat.recipient_external_id)
                 );
 
-                const availableChats = filteredArray.filter(item => item.female_block === 0 && item.male_block === 0);
+                const availableChats = filteredArray.filter(item => (item.female_block !== 1) && (item.male_block !== 1));
 
                 if (availableChats.length === 0) {
                     this.setProfileStatus(profileId, `processing`);
@@ -441,7 +442,13 @@ const mailService = {
     },
 
     getProfileMessage(profileId) {
-        return invites[profileId] || null;
+        // Return both message and attachments for syncing
+        const invite = invites[profileId];
+        if (typeof invite === 'object' && invite !== null && ('message' in invite || 'attachments' in invite)) {
+            return invite;
+        }
+        // Backward compatibility: if only a string is stored
+        return invite ? { message: invite, attachments: [] } : null;
     },
 
     cleanupProcessing(profileId) {

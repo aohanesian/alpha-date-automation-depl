@@ -300,14 +300,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Chat profiles
         document.querySelectorAll('.profile-item[data-profile-type="chat"]').forEach(async (profileBlock) => {
             const profileId = profileBlock.dataset.profileId;
-            // Only select the Start/Stop button in .controls, not .btn-refresh
             const controls = profileBlock.querySelector('.controls');
             const startStopBtn = controls ? controls.querySelector('button.control-btn:not(.btn-clear):not(.btn-refresh)') : null;
             const textarea = profileBlock.querySelector('textarea');
             const status = profileBlock.querySelector('.status');
+            const attachmentsContainer = profileBlock.querySelector('.attachments-container');
             if (!profileId || !startStopBtn || !textarea || !status) return;
             try {
-                const resp = await fetch(`${API_URL}/chat/status/${profileId}`);
+                const resp = await makeAuthenticatedRequest(`${API_URL}/chat/status/${profileId}`);
                 const data = await resp.json();
                 const isProc = data.status && data.status.toLowerCase().includes('processing');
                 startStopBtn.textContent = isProc ? 'Stop' : 'Start';
@@ -315,11 +315,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 startStopBtn.classList.toggle('btn-start', !isProc);
                 startStopBtn.disabled = false;
                 textarea.disabled = isProc;
+                // Sync textarea
                 const savedMsg = localStorage.getItem(`chat_msg_${profileId}`);
-                const syncedInvite = data.invite
-                if (isProc && (savedMsg || data.invite) && !textarea.value) {
+                const syncedInvite = data.invite && typeof data.invite === 'object' ? data.invite.messageTemplate : data.invite;
+                if ((savedMsg || syncedInvite) && !textarea.value) {
                     textarea.value = syncedInvite || savedMsg;
                     if (syncedInvite) localStorage.setItem(`chat_msg_${profileId}`, syncedInvite);
+                }
+                // Sync attachment (radio) from server invite
+                if (attachmentsContainer) {
+                    const radios = attachmentsContainer.querySelectorAll('input[type="radio"]');
+                    let serverAttachment = null;
+                    if (data.invite && typeof data.invite === 'object' && data.invite.attachment) {
+                        serverAttachment = data.invite.attachment;
+                    }
+                    let toSelect = null;
+                    if (serverAttachment && serverAttachment.id) {
+                        toSelect = Array.from(radios).find(rb => rb.dataset.id === String(serverAttachment.id));
+                    } else if (serverAttachment && !serverAttachment.id) {
+                        // No attachment selected (No Attachment radio)
+                        toSelect = Array.from(radios).find(rb => !rb.dataset.id);
+                    }
+                    radios.forEach(rb => {
+                        rb.checked = false;
+                        rb.closest('.attachment-item').querySelector('.attachment-preview')?.classList.remove('selected');
+                    });
+                    if (toSelect) {
+                        toSelect.checked = true;
+                        toSelect.closest('.attachment-item').querySelector('.attachment-preview')?.classList.add('selected');
+                    }
                 }
                 status.textContent = data.status || (isProc ? 'Processing' : 'Ready');
                 status.className = isProc ? 'status processing' : 'status';
@@ -328,7 +352,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Mail profiles
         document.querySelectorAll('.profile-item[data-profile-type="mail"]').forEach(async (profileBlock) => {
             const profileId = profileBlock.dataset.profileId;
-            // Only select the Start/Stop button in .controls, not .btn-refresh
             const controls = profileBlock.querySelector('.controls');
             const startStopBtn = controls ? controls.querySelector('button.control-btn:not(.btn-clear):not(.btn-refresh)') : null;
             const textarea = profileBlock.querySelector('textarea');
@@ -336,10 +359,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const attachmentsContainer = profileBlock.querySelector('.attachments-container');
             if (!profileId || !startStopBtn || !textarea || !status) return;
             try {
-                const resp = await fetch(`${API_URL}/mail/status/${profileId}`);
+                const resp = await makeAuthenticatedRequest(`${API_URL}/mail/status/${profileId}`);
                 const data = await resp.json();
                 const isProc = data.status && data.status.toLowerCase().includes('processing');
-                console.log('Mail status: isProc', data);
                 startStopBtn.textContent = isProc ? 'Stop' : 'Start';
                 startStopBtn.classList.toggle('btn-stop', isProc);
                 startStopBtn.classList.toggle('btn-start', !isProc);
@@ -349,11 +371,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     const checkboxes = attachmentsContainer.querySelectorAll('input[type="checkbox"]');
                     checkboxes.forEach(cb => cb.disabled = isProc);
                 }
+                // Sync textarea
                 const savedMsg = localStorage.getItem(`mail_msg_${profileId}`);
-                const syncedInvite = data.invite
-                if (isProc && (savedMsg || data.invite) && !textarea.value) {
+                const syncedInvite = data.invite && typeof data.invite === 'object' ? data.invite.message : data.invite;
+                if ((savedMsg || syncedInvite) && !textarea.value) {
                     textarea.value = syncedInvite || savedMsg;
                     if (syncedInvite) localStorage.setItem(`mail_msg_${profileId}`, syncedInvite);
+                }
+                // Sync attachments (checkboxes) from server invite
+                if (attachmentsContainer) {
+                    const checkboxes = attachmentsContainer.querySelectorAll('input[type="checkbox"]');
+                    let serverAttachments = [];
+                    if (data.invite && typeof data.invite === 'object' && Array.isArray(data.invite.attachments)) {
+                        serverAttachments = data.invite.attachments;
+                    }
+                    checkboxes.forEach(cb => {
+                        cb.checked = false;
+                        cb.closest('.attachment-item').querySelector('.attachment-preview')?.classList.remove('selected');
+                    });
+                    let toSelect = [];
+                    if (serverAttachments.length > 0) {
+                        toSelect = checkboxes ? Array.from(checkboxes).filter(cb => serverAttachments.some(a => String(a.id) === cb.dataset.id)) : [];
+                    }
+                    toSelect.forEach(cb => {
+                        cb.checked = true;
+                        cb.closest('.attachment-item').querySelector('.attachment-preview')?.classList.add('selected');
+                    });
                 }
                 status.textContent = data.status || (isProc ? 'Processing' : 'Ready');
                 status.className = isProc ? 'status processing' : 'status';
@@ -462,7 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Textarea for message template
             const textarea = document.createElement('textarea');
-            textarea.placeholder = `Enter message (min ${MESSAGE_MIN}, max ${MESSAGE_MAX} chars)...`;
+            textarea.placeholder = `Enter message (min ${MESSAGE_MIN}, max ${MESSAGE_MAX} chars) or select 1 attachment (images, videos, audio)...`;
             textarea.maxLength = MESSAGE_MAX;
             textarea.rows = 6;
             const savedMsg = localStorage.getItem(`chat_msg_${profile.external_id}`);
@@ -479,6 +522,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateCharCounter(textarea, charCounter, MESSAGE_MIN, MESSAGE_MAX);
                 localStorage.setItem(`chat_msg_${profile.external_id}`, textarea.value.trim());
             });
+
+            // Attachments container (single-select for chat)
+            const attachmentsContainer = document.createElement('div');
+            attachmentsContainer.className = 'attachments-container';
+            attachmentsContainer.style.display = 'none';
+
+            // Create a wrapper for attachments content
+            const attachmentsContent = document.createElement('div');
+            attachmentsContent.className = 'attachments-grid';
+            attachmentsContent.style.display = 'grid';
+            attachmentsContent.innerHTML = '<div class="status">Loading attachments...</div>';
+
+            // Add refresh button
+            const refreshBtn = document.createElement('button');
+            refreshBtn.textContent = '🔄 Refresh Attachments';
+            refreshBtn.className = 'control-btn btn-refresh';
+            refreshBtn.style.marginBottom = '10px';
+            refreshBtn.style.color = 'black';
+            refreshBtn.addEventListener('click', () => {
+                loadChatAttachments(profile.external_id, attachmentsContent);
+            });
+
+            // Add both elements to container
+            profileBlock.appendChild(refreshBtn);
+            attachmentsContainer.appendChild(attachmentsContent);
+
+            // Load attachments
+            loadChatAttachments(profile.external_id, attachmentsContent);
+
+            // Toggle attachments display
+            if (toggleAttachments) {
+                toggleAttachments.addEventListener('change', () => {
+                    const containers = document.querySelectorAll('.attachments-container');
+                    containers.forEach(container => {
+                        container.style.display = toggleAttachments.checked ? 'block' : 'none';
+                    });
+                });
+            }
 
             // Status
             const status = document.createElement('div');
@@ -498,6 +579,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             function setInputsDisabled(disabled) {
                 textarea.disabled = disabled;
+                // Disable all radios in this profile's attachments
+                const radios = attachmentsContainer.querySelectorAll('input[type="radio"]');
+                radios.forEach(rb => rb.disabled = disabled);
             }
 
             startStopBtn.addEventListener('click', async () => {
@@ -509,8 +593,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     setInputsDisabled(true);
                     try {
                         const messageTemplate = textarea.value.trim();
-                        if (messageTemplate.length < MESSAGE_MIN || messageTemplate.length > MESSAGE_MAX) {
-                            status.textContent = `Error: Message must be between ${MESSAGE_MIN} and ${MESSAGE_MAX} characters`;
+                        // Get selected attachment (radio)
+                        const selectedRadio = attachmentsContainer.querySelector('input[type="radio"]:checked');
+                        let attachment = null;
+                        if (selectedRadio && selectedRadio.dataset.id) {
+                            const attachmentItem = selectedRadio.closest('.attachment-item');
+                            const filename = attachmentItem.querySelector('.attachment-filename').textContent;
+                            const link = selectedRadio.dataset.link;
+                            attachment = {
+                                id: selectedRadio.dataset.id,
+                                type: selectedRadio.dataset.type,
+                                filename: filename,
+                                link: link,
+                                content_type: selectedRadio.dataset.type === 'images' ? 'image' :
+                                    selectedRadio.dataset.type === 'videos' ? 'video' :
+                                        'audio'
+                            };
+                        }
+                        // Require at least one: message or attachment
+                        if (!messageTemplate && !attachment) {
+                            status.textContent = 'Error: Please enter a message or select an attachment.';
                             status.className = 'status error';
                             startStopBtn.textContent = 'Start';
                             startStopBtn.disabled = false;
@@ -519,7 +621,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         const response = await makeAuthenticatedRequest(`${API_URL}/chat/start`, {
                             method: 'POST',
-                            body: JSON.stringify({ profileId: profile.external_id, messageTemplate })
+                            body: JSON.stringify({ profileId: profile.external_id, messageTemplate, attachment })
                         });
                         if (!response.ok) {
                             status.textContent = 'Start Failed, try again later';
@@ -601,7 +703,7 @@ document.addEventListener('DOMContentLoaded', () => {
             controls.append(startStopBtn, clearBtn);
 
             // Assemble
-            profileBlock.append(header, textarea, charCounter, status, controls);
+            profileBlock.append(header, textarea, charCounter, attachmentsContainer, status, controls);
             chatProfilesContainer.appendChild(profileBlock);
         });
     }
@@ -633,7 +735,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Textarea for message template
             const textarea = document.createElement('textarea');
-            textarea.placeholder = `Write your letter (min ${LETTER_MIN}, max ${LETTER_MAX} chars)...`;
+            textarea.placeholder = `Write your letter (min ${LETTER_MIN}, max ${LETTER_MAX} chars)... You can also select multiple attachments (images, videos, audio)`;
             textarea.maxLength = LETTER_MAX;
             textarea.rows = 10;
             const savedMsg = localStorage.getItem(`mail_msg_${profile.external_id}`);
@@ -864,6 +966,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Render new attachments
                 renderAttachments(data.attachments, container);
+                // After rendering, sync selection from server
+                await syncMailAttachmentSelection(profileId, container);
             } else {
                 container.innerHTML = '<div class="status error">Failed to load attachments</div>';
             }
@@ -988,6 +1092,144 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!hasAttachments) {
             container.innerHTML = '<div class="status">No attachments available, to add attachments create folder with name "send" for each type of media</div>';
+        }
+    }
+
+    // Load attachments for chat profile (single-select)
+    async function loadChatAttachments(profileId, container) {
+        try {
+            const statusDiv = container.querySelector('.status') || document.createElement('div');
+            statusDiv.className = 'status';
+            statusDiv.textContent = 'Loading attachments...';
+            if (!container.contains(statusDiv)) {
+                container.appendChild(statusDiv);
+            }
+            const response = await makeAuthenticatedRequest(`${API_URL}/chat/attachments/${profileId}?forceRefresh=true`);
+            if (response.status === 401) {
+                statusDiv.textContent = 'Session expired';
+                statusDiv.className = 'status error';
+                return;
+            }
+            const data = await response.json();
+            if (data.success) {
+                container.innerHTML = '';
+                renderChatAttachments(data.attachments, container, profileId);
+                // After rendering, sync selection from server
+                await syncChatAttachmentSelection(profileId, container);
+            } else {
+                container.innerHTML = '<div class="status error">Failed to load attachments</div>';
+            }
+        } catch (error) {
+            console.error(`Failed to load chat attachments for ${profileId}:`, error);
+            container.innerHTML = '<div class="status error">Error loading attachments</div>';
+        }
+    }
+
+    // Render chat attachments (single-select radio)
+    function renderChatAttachments(attachments, container, profileId) {
+        if (!attachments) {
+            container.innerHTML = '<div class="status">No attachments available</div>';
+            return;
+        }
+        let hasAttachments = false;
+        let allRadios = [];
+        const radioName = `chat-attachment-${profileId}`;
+        // Add 'No Attachment' option
+        const noAttachmentWrapper = document.createElement('label');
+        noAttachmentWrapper.className = 'attachment-item';
+        const noAttachmentRadio = document.createElement('input');
+        noAttachmentRadio.type = 'radio';
+        noAttachmentRadio.className = 'attachment-radio';
+        noAttachmentRadio.name = radioName;
+        noAttachmentRadio.value = '';
+        noAttachmentRadio.dataset.id = '';
+        noAttachmentRadio.dataset.type = '';
+        noAttachmentRadio.dataset.filename = '';
+        noAttachmentRadio.dataset.link = '';
+        const noAttachmentLabel = document.createElement('div');
+        noAttachmentLabel.className = 'attachment-filename';
+        noAttachmentLabel.textContent = 'Skip attachment';
+        noAttachmentWrapper.append(noAttachmentRadio, noAttachmentLabel);
+        container.append(noAttachmentWrapper);
+        allRadios.push(noAttachmentRadio);
+        // Highlight logic for 'No Attachment'
+        noAttachmentRadio.addEventListener('change', () => {
+            allRadios.forEach(rb => {
+                if (rb !== noAttachmentRadio) rb.closest('.attachment-item').querySelector('.attachment-preview')?.classList.remove('selected');
+            });
+        });
+        // Render actual attachments
+        Object.entries(attachments).forEach(([type, items]) => {
+            if (items && items.length > 0) {
+                hasAttachments = true;
+                items.forEach(item => {
+                    if (!item) return;
+                    const wrapper = document.createElement('label');
+                    wrapper.className = 'attachment-item';
+                    const preview = document.createElement('div');
+                    preview.className = 'attachment-preview';
+                    // Type label overlay
+                    const typeLabel = document.createElement('div');
+                    typeLabel.className = 'attachment-type-label';
+                    if (type === 'images') typeLabel.textContent = 'Photo';
+                    else if (type === 'videos') typeLabel.textContent = 'Video';
+                    else typeLabel.textContent = 'Audio';
+                    preview.appendChild(typeLabel);
+                    if (type === 'images' || type === 'videos') {
+                        const img = document.createElement('img');
+                        img.src = item.thumb_link || item.link;
+                        img.alt = item.filename;
+                        preview.appendChild(img);
+                    } else {
+                        preview.innerHTML += `
+              <div class="audio-preview">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                  <path fill="currentColor" d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2Z"/>
+                </svg>
+              </div>
+            `;
+                    }
+                    const radio = document.createElement('input');
+                    radio.type = 'radio';
+                    radio.className = 'attachment-radio';
+                    radio.name = radioName;
+                    radio.dataset.id = item.id;
+                    radio.dataset.type = type;
+                    radio.dataset.filename = item.filename;
+                    radio.dataset.link = item.link;
+                    radio.addEventListener('change', () => {
+                        // Highlight preview if checked
+                        if (radio.checked) {
+                            allRadios.forEach(rb => {
+                                if (rb !== radio) rb.closest('.attachment-item').querySelector('.attachment-preview')?.classList.remove('selected');
+                            });
+                            preview.classList.add('selected');
+                        } else {
+                            preview.classList.remove('selected');
+                        }
+                    });
+                    allRadios.push(radio);
+                    // Make preview clickable to toggle radio
+                    preview.addEventListener('click', (e) => {
+                        if (e.target === radio) return;
+                        if (radio.disabled) return;
+                        radio.checked = !radio.checked;
+                        radio.dispatchEvent(new Event('change', { bubbles: true }));
+                    });
+                    // Initial highlight if already checked
+                    if (radio.checked) {
+                        preview.classList.add('selected');
+                    }
+                    const filename = document.createElement('div');
+                    filename.className = 'attachment-filename';
+                    filename.textContent = item.filename || 'Unnamed file';
+                    wrapper.append(preview, radio, filename);
+                    container.append(wrapper);
+                });
+            }
+        });
+        if (!hasAttachments) {
+            container.innerHTML += '<div class="status">No attachments available, to add attachments create folder with name "send" for each type of media</div>';
         }
     }
 
@@ -1166,4 +1408,65 @@ document.addEventListener('DOMContentLoaded', () => {
         syncAllProfileProcessingStates();
         startProcessingSync();
     }
+
+    // Sync chat attachment radio from server invite
+    async function syncChatAttachmentSelection(profileId, container) {
+        try {
+            const resp = await makeAuthenticatedRequest(`${API_URL}/chat/status/${profileId}`);
+            const data = await resp.json();
+            if (data.invite && typeof data.invite === 'object' && 'attachment' in data.invite) {
+                const radios = container.querySelectorAll('input[type="radio"]');
+                let serverAttachment = data.invite.attachment;
+                let toSelect = null;
+                if (serverAttachment && serverAttachment.id) {
+                    toSelect = Array.from(radios).find(rb => rb.dataset.id === String(serverAttachment.id));
+                } else if (serverAttachment && !serverAttachment.id) {
+                    // No attachment selected (No Attachment radio)
+                    toSelect = Array.from(radios).find(rb => !rb.dataset.id);
+                }
+                radios.forEach(rb => {
+                    rb.checked = false;
+                    rb.closest('.attachment-item').querySelector('.attachment-preview')?.classList.remove('selected');
+                });
+                if (toSelect) {
+                    toSelect.checked = true;
+                    toSelect.closest('.attachment-item').querySelector('.attachment-preview')?.classList.add('selected');
+                }
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    // Sync mail attachment checkboxes from server invite
+    async function syncMailAttachmentSelection(profileId, container) {
+        try {
+            const resp = await makeAuthenticatedRequest(`${API_URL}/mail/status/${profileId}`);
+            const data = await resp.json();
+            if (data.invite && Array.isArray(data.invite.attachments)) {
+                const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+                checkboxes.forEach(cb => {
+                    cb.checked = data.invite.attachments.some(a => String(a.id) === cb.dataset.id);
+                    cb.closest('.attachment-item').querySelector('.attachment-preview')?.classList.toggle('selected', cb.checked);
+                });
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    // Save attachment selection to localStorage on change for chat and mail
+    // For chat (radio)
+    document.addEventListener('change', function(e) {
+        if (e.target.matches('.profile-item[data-profile-type="chat"] input[type="radio"].attachment-radio')) {
+            const profileBlock = e.target.closest('.profile-item[data-profile-type="chat"]');
+            if (profileBlock) {
+                localStorage.setItem(`chat_attachment_${profileBlock.dataset.profileId}`, e.target.dataset.id || '');
+            }
+        }
+        // For mail (checkbox)
+        if (e.target.matches('.profile-item[data-profile-type="mail"] input[type="checkbox"].attachment-checkbox')) {
+            const profileBlock = e.target.closest('.profile-item[data-profile-type="mail"]');
+            if (profileBlock) {
+                const checked = Array.from(profileBlock.querySelectorAll('input[type="checkbox"].attachment-checkbox:checked')).map(cb => cb.dataset.id);
+                localStorage.setItem(`mail_attachments_${profileBlock.dataset.profileId}`, checked.join(','));
+            }
+        }
+    });
 })

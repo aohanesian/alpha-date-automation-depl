@@ -1,5 +1,6 @@
 // services/chatService.js
 import fetch from 'node-fetch';
+import mailService from './mailService.js';
 
 // In-memory storage for processing state
 const processingProfiles = new Set();
@@ -27,19 +28,20 @@ const chatService = {
         }
     },
 
-    async startProfileProcessing(profileId, messageTemplate, token) {
+    async startProfileProcessing(profileId, messageTemplate, token, attachment = null) {
         if (processingProfiles.has(profileId)) {
             return;
         }
 
-        invites[profileId] = messageTemplate;
+        // Store both messageTemplate and attachment for syncing
+        invites[profileId] = { messageTemplate, attachment };
         const controller = new AbortController();
         abortControllers.set(profileId, controller);
         processingProfiles.add(profileId);
         this.setProfileStatus(profileId, 'processing');
 
         // Start processing in a non-blocking way
-        this.processChatsForProfile(profileId, messageTemplate, token, controller)
+        this.processChatsForProfile(profileId, messageTemplate, token, controller, attachment)
             .catch(error => {
                 console.error(`Chat processing error for profile ${profileId}:`, error);
                 this.setProfileStatus(profileId, `Error: ${error.message}`);
@@ -47,7 +49,7 @@ const chatService = {
             });
     },
 
-    async processChatsForProfile(profileId, messageTemplate, token, controller) {
+    async processChatsForProfile(profileId, messageTemplate, token, controller, attachment = null) {
         try {
             while (true) {
                 if (controller.signal.aborted) {
@@ -72,7 +74,8 @@ const chatService = {
                     !chatBlockLists[profileId]?.includes(chat.recipient_external_id)
                 );
 
-                const availableChats = filteredArray.filter(item => item.female_block === 0 && item.male_block === 0);
+                // Fix: treat as available if not equal to 1 (handle missing fields)
+                const availableChats = filteredArray.filter(item => (item.female_block !== 1) && (item.male_block !== 1));
 
                 if (availableChats.length === 0) {
                     this.setProfileStatus(profileId, `processing`);
@@ -108,6 +111,14 @@ const chatService = {
                     }
 
                     try {
+                        // If attachment is provided, send it first
+                        if (attachment) {
+                            const attachmentResult = await this.sendAttachmentMessage(profileId, recipientId, attachment, token);
+                            if (!attachmentResult.success) {
+                                skipped++;
+                                continue;
+                            }
+                        }
                         const result = await this.sendFollowUpMessage(profileId, recipientId, messageTemplate, token);
 
                         // Handle different response types
@@ -262,7 +273,58 @@ const chatService = {
         }
     },
 
+    async sendAttachmentMessage(senderId, recipientId, attachment, token) {
+        // Determine message_type and content based on attachment type
+        let message_type = '';
+        let content_url = '';
+        if (attachment.content_type === 'image') {
+            message_type = 'SENT_IMAGE';
+            content_url = attachment.link;
+        } else if (attachment.content_type === 'video') {
+            message_type = 'SENT_VIDEO';
+            content_url = attachment.link;
+        } else if (attachment.content_type === 'audio') {
+            message_type = 'SENT_AUDIO';
+            content_url = attachment.link;
+        } else {
+            return { success: false, error: 'Unsupported attachment type' };
+        }
+
+        const payload = {
+            sender_id: +senderId,
+            recipient_id: recipientId,
+            message_content: content_url,
+            message_type: message_type,
+            filename: attachment.filename || '',
+            content_id: attachment.id || undefined,
+            chance: true
+        };
+
+        try {
+            const response = await fetch('https://alpha.date/api/chat/message', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const messageData = await response.json();
+            if (!response.ok) {
+                return { success: false, error: messageData.error || response.statusText };
+            }
+            this.addToBlockList(senderId, recipientId);
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
     async sendFollowUpMessage(senderId, recipientId, messageContent, token) {
+        
+        if (!messageContent) return { success: true };
+
         try {
             const response = await fetch('https://alpha.date/api/chat/message', {
                 method: 'POST',
@@ -365,12 +427,23 @@ const chatService = {
     },
 
     getProfileMessage(profileId) {
-        return invites[profileId] || null;
+        // Return both messageTemplate and attachment for syncing
+        const invite = invites[profileId];
+        if (typeof invite === 'object' && invite !== null && ('messageTemplate' in invite || 'attachment' in invite)) {
+            return invite;
+        }
+        // Backward compatibility: if only a string is stored
+        return invite ? { messageTemplate: invite, attachment: null } : null;
     },
 
     cleanupProcessing(profileId) {
         processingProfiles.delete(profileId);
         abortControllers.delete(profileId);
+    },
+
+    // Add this method to reuse mailService's attachment logic for chat
+    async getAttachments(profileId, token, forceRefresh = false) {
+        return mailService.getAttachments(profileId, token, forceRefresh);
     }
 };
 

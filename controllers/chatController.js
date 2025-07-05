@@ -65,24 +65,25 @@ router.get('/profiles', async (req, res) => {
 // Start chat processing for a profile
 router.post('/start', async (req, res) => {
     try {
-        const { profileId, messageTemplate } = req.body;
+        const { profileId, messageTemplate, attachment } = req.body;
         
         console.log('Chat start request - Token present:', !!req.token);
 
-        if (!req.token || !profileId || !messageTemplate) {
+        if (!req.token || !profileId || !(messageTemplate || attachment)) {
             return res.status(400).json({ 
                 success: false, 
                 message: 'Missing required data',
                 details: {
                     hasToken: !!req.token,
                     hasProfileId: !!profileId,
-                    hasMessageTemplate: !!messageTemplate
+                    hasMessageTemplate: !!messageTemplate,
+                    hasAttachment: !!attachment
                 }
             });
         }
 
         // Start chat processing in the background (non-blocking)
-        chatService.startProfileProcessing(profileId, messageTemplate, req.token);
+        chatService.startProfileProcessing(profileId, messageTemplate, req.token, attachment);
 
         res.json({ success: true, message: 'Processing started' });
     } catch (error) {
@@ -124,6 +125,25 @@ router.get('/status/:profileId', (req, res) => {
         res.json({ success: true, status, invite });
     } catch (error) {
         console.error('Get status error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Get attachments for a profile (for chat)
+router.get('/attachments/:profileId', async (req, res) => {
+    try {
+        const { profileId } = req.params;
+        const { forceRefresh } = req.query;
+        const token = req.token;
+
+        if (!token) {
+            return res.status(401).json({ success: false, message: 'Not authenticated' });
+        }
+
+        const attachments = await chatService.getAttachments(profileId, token, forceRefresh === 'true');
+        res.json({ success: true, attachments });
+    } catch (error) {
+        console.error('Get chat attachments error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
