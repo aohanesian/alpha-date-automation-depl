@@ -332,7 +332,7 @@ const mailService = {
             return baseAttachment;
         }).filter(attachment => attachment !== null); // Remove any invalid attachments
 
-        console.log('Formatted attachments:', formattedAttachments);
+        // console.log('Formatted attachments:', formattedAttachments);
 
         try {
             const payload = {
@@ -345,7 +345,7 @@ const mailService = {
                 is_send_email: false
             };
 
-            console.log('Sending mail with payload:', JSON.stringify(payload, null, 2));
+            // console.log('Sending mail with payload:', JSON.stringify(payload, null, 2));
 
             const mailResponse = await fetch('https://alpha.date/api/mailbox/mail', {
                 method: 'POST',
@@ -357,7 +357,7 @@ const mailService = {
             });
 
             const mailData = await mailResponse.json();
-            console.log(`mailData response: ${JSON.stringify(mailData, null, 2)} profile ${profileId} man ${recipientId}`);
+            // console.log(`mailData response: ${JSON.stringify(mailData, null, 2)} profile ${profileId} man ${recipientId}`);
 
             const hasRestrictionError = mailData.error === "Restriction of sending a personal letter. Try when the list becomes active";
 

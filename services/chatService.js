@@ -255,11 +255,11 @@ const chatService = {
 
             const data = await response.json();
 
-            console.log('Chat history data:', data);
+            // console.log('Chat history data:', data);
 
             const lastMessage = data.response[data.response.length - 1];
 
-            console.log('Last message:', lastMessage);
+            // console.log('Last message:', lastMessage);
 
             const recipientID = lastMessage.recipient_external_id === profileId
                 ? lastMessage.sender_external_id
@@ -311,18 +311,61 @@ const chatService = {
             });
 
             const messageData = await response.json();
-            if (!response.ok) {
-                return { success: false, error: messageData.error || response.statusText };
+            const hasRestrictionError = messageData.error === "Restriction of sending a personal message. Try when the list becomes active";
+
+            console.log('[DEBUG LIKES] ' + JSON.stringify(messageData) + ' for man ID ' + recipientId)
+
+            // Handle different HTTP status codes
+            if (response.status === 429) {
+                // Rate limited - return signal to wait and retry
+                return {
+                    success: false,
+                    rateLimited: true,
+                    error: 'Rate limited'
+                };
             }
+
+            if (response.status === 400 || response.status === 401 || messageData.error === "Not your profile") {
+                // Fatal errors - stop processing entirely
+                return {
+                    success: false,
+                    shouldStop: true,
+                    error: `Fatal error: ${response.status} - ${messageData.error || response.statusText}`
+                };
+            }
+
+            if (!response.ok) {
+                // Other HTTP errors - skip this message but continue processing
+                return {
+                    success: false,
+                    error: `HTTP ${response.status}: ${response.statusText}`
+                };
+            }
+
+            // Response is OK - check for API-level errors
+            if (hasRestrictionError) {
+                // Restriction error - skip this recipient but don't add to block list
+                return {
+                    success: false,
+                    error: 'Recipient restriction'
+                };
+            }
+
+            // Success - add to block list to avoid sending again
             this.addToBlockList(senderId, recipientId);
             return { success: true };
+
         } catch (error) {
-            return { success: false, error: error.message };
+            // Network or other errors
+            return {
+                success: false,
+                error: error.message
+            };
         }
     },
 
     async sendFollowUpMessage(senderId, recipientId, messageContent, token) {
-        
+
         if (!messageContent) return { success: true };
 
         try {
