@@ -268,7 +268,7 @@ const chatService = {
             return recipientID;
 
         } catch (error) {
-            console.error('Failed to get recipient ID:', error);
+            console.error(`Failed to get recipient ID: ${JSON.stringify(error)} for ${profileId} ${chatUid} data: ${JSON.stringify(data)}`);
             return null;
         }
     },
