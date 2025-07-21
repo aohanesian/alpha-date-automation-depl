@@ -175,24 +175,43 @@ const chatService = {
 
                 console.log(`Fetching chat page ${page} for profile ${profileId}...`);
 
-                const response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        user_id: profileId,
-                        chat_uid: false,
-                        page: page,
-                        freeze: true,
-                        limits: 1,
-                        ONLINE_STATUS: 1,
-                        SEARCH: "",
-                        CHAT_TYPE: "CHANCE"
-                    }),
-                    signal
-                });
+                let response;
+                try {
+                    response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            user_id: profileId,
+                            chat_uid: false,
+                            page: page,
+                            freeze: true,
+                            limits: 1,
+                            ONLINE_STATUS: 1,
+                            SEARCH: "",
+                            CHAT_TYPE: "CHANCE"
+                        }),
+                        signal
+                    });
+                } catch (err) {
+                    // Network or timeout error (e.g., 524)
+                    console.error(`Network error or timeout fetching chats for profile ${profileId}:`, err);
+                    await this.delay(50000, signal);
+                    continue;
+                }
+
+                if (response.status === 401) {
+                    console.error(`401 Unauthorized for profile ${profileId}. Terminating session.`);
+                    throw new Error('401 Unauthorized - terminating session');
+                }
+
+                if (response.status === 524) {
+                    console.error(`524 Timeout for profile ${profileId}. Waiting and retrying...`);
+                    await this.delay(50000, signal);
+                    continue;
+                }
 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -252,17 +271,37 @@ const chatService = {
 
     // Batch fetch last messages for all chatUids
     async fetchLastMessages(chatUids, token) {
-        console.log('[fetchLastMessages called]')
+        console.log('[fetchLastMessages called]');
         if (!Array.isArray(chatUids) || chatUids.length === 0) return {};
         try {
-            const response = await fetch('https://alpha.date/api/chatList/lastMessage', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ chat_uid: chatUids })
-            });
+            let response;
+            try {
+                response = await fetch('https://alpha.date/api/chatList/lastMessage', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ chat_uid: chatUids })
+                });
+            } catch (err) {
+                // Network or timeout error (e.g., 524)
+                console.error('Network error or timeout in fetchLastMessages:', err);
+                await this.delay(50000);
+                return await this.fetchLastMessages(chatUids, token); // retry
+            }
+
+            if (response.status === 401) {
+                console.error('401 Unauthorized in fetchLastMessages. Terminating session.');
+                throw new Error('401 Unauthorized - terminating session');
+            }
+
+            if (response.status === 524) {
+                console.error('524 Timeout in fetchLastMessages. Waiting and retrying...');
+                await this.delay(50000);
+                return await this.fetchLastMessages(chatUids, token); // retry
+            }
+
             if (!response.ok) throw new Error('Failed to fetch last messages');
             const data = await response.json();
             console.log('[LAST MESSAGE BATCH]:', data);
@@ -273,7 +312,7 @@ const chatService = {
             return map;
         } catch (error) {
             console.error('Failed to batch fetch last messages:', error);
-            return {};
+            throw error;
         }
     },
 
@@ -322,11 +361,19 @@ const chatService = {
 
             // Handle different HTTP status codes
             if (response.status === 429) {
-                // Rate limited - return signal to wait and retry
+                // Rate limited - wait and retry
+                console.error('429 Rate limited in sendAttachmentMessage. Waiting and retrying...');
+                await this.delay(50000);
+                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token);
+            }
+
+            if (response.status === 401) {
+                // Fatal error - terminate session
+                console.error('401 Unauthorized in sendAttachmentMessage. Terminating session.');
                 return {
                     success: false,
-                    rateLimited: true,
-                    error: 'Rate limited'
+                    shouldStop: true,
+                    error: '401 Unauthorized - terminating session'
                 };
             }
 
@@ -337,6 +384,13 @@ const chatService = {
                     shouldStop: true,
                     error: `Fatal error: ${response.status} - ${messageData.error || response.statusText}`
                 };
+            }
+
+            if (response.status === 524) {
+                // Timeout - wait and retry
+                console.error('524 Timeout in sendAttachmentMessage. Waiting and retrying...');
+                await this.delay(50000);
+                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token);
             }
 
             if (!response.ok) {
@@ -398,11 +452,19 @@ const chatService = {
 
             // Handle different HTTP status codes
             if (response.status === 429) {
-                // Rate limited - return signal to wait and retry
+                // Rate limited - wait and retry
+                console.error('429 Rate limited in sendFollowUpMessage. Waiting and retrying...');
+                await this.delay(50000);
+                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token);
+            }
+
+            if (response.status === 401) {
+                // Fatal error - terminate session
+                console.error('401 Unauthorized in sendFollowUpMessage. Terminating session.');
                 return {
                     success: false,
-                    rateLimited: true,
-                    error: 'Rate limited'
+                    shouldStop: true,
+                    error: '401 Unauthorized - terminating session'
                 };
             }
 
@@ -413,6 +475,13 @@ const chatService = {
                     shouldStop: true,
                     error: `Fatal error: ${response.status} - ${messageData.error || response.statusText}`
                 };
+            }
+
+            if (response.status === 524) {
+                // Timeout - wait and retry
+                console.error('524 Timeout in sendFollowUpMessage. Waiting and retrying...');
+                await this.delay(50000);
+                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token);
             }
 
             if (!response.ok) {
