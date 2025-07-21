@@ -132,62 +132,56 @@ const mailService = {
 
                 this.setProfileStatus(profileId, `processing`);
 
-                let sent = 0;
-                let skipped = 0;
+                // --- Batch fetch last messages ---
+                const chatUids = availableChats.map(chat => chat.chat_uid);
+                const lastMessagesMap = await this.fetchLastMessages(chatUids, token);
 
-                for (const [index, chat] of availableChats.entries()) {
-                    if (controller.signal.aborted) {
-                        this.setProfileStatus(profileId, 'Processing stopped');
-                        break;
-                    }
+                // Debug logs
+                console.log('[availableChats]:', availableChats.map(chat => chat.chat_uid));
+                console.log('[blockList]:', mailBlockLists[profileId]);
 
-                    this.setProfileStatus(profileId,
-                        `processing`
-                    );
-
-                    const recipientId = await this.getRecipientId(chat.chat_uid, token, profileId);
-
-                    if (!recipientId) {
-                        skipped++;
-                        continue;
-                    }
-
-                    if (this.isBlocked(profileId, recipientId)) {
-                        skipped++;
-                        continue;
-                    }
-
-                    try {
-                        const result = await this.sendMail(profileId, recipientId, message, attachmentsList, token);
-
-                        // Handle different response types
-                        if (result.success) {
-                            sent++;
-                        } else if (result.rateLimited) {
-                            // Rate limited - wait and continue processing
-                            this.setProfileStatus(profileId, 'processing');
-                            await this.delay(50000, controller.signal);
-                            // Don't increment counters, retry this message
-                            continue;
-                        } else if (result.shouldStop) {
-                            // Fatal error - stop processing
-                            this.setProfileStatus(profileId, `Stopping due to: ${result.error}`);
-                            return;
-                        } else {
-                            // Other error - skip this message
-                            skipped++;
-                        }
-                    } catch (error) {
-                        console.error(`Failed to send mail to ${recipientId}:`, error);
-                        skipped++;
-                    }
-
-                    // Normal delay between messages (skip if we just did a rate limit delay)
-                    await this.delay(7000, controller.signal);
+                // Collect recipient IDs for batch send
+                const recipientIds = [];
+                const chatToRecipient = {};
+                for (const chat of availableChats) {
+                    const lastMessage = lastMessagesMap[chat.chat_uid];
+                    const recipientId = this.getRecipientIdFromLastMessage(lastMessage, profileId);
+                    console.log(`[processMailsForProfile] chat_uid: ${chat.chat_uid}, lastMessage:`, lastMessage, `recipientId:`, recipientId);
+                    if (!recipientId) continue;
+                    if (this.isBlocked(profileId, recipientId)) continue;
+                    recipientIds.push(recipientId);
+                    chatToRecipient[chat.chat_uid] = recipientId;
                 }
 
-                this.setProfileStatus(profileId, `processing`);
-                await this.delay(50000, controller.signal);
+                console.log('[recipientIds]:', recipientIds);
+
+                if (recipientIds.length === 0) {
+                    await this.delay(50000, controller.signal);
+                    continue;
+                }
+
+                try {
+                    const result = await this.sendMail(profileId, recipientIds, message, attachmentsList, token);
+
+                    // Handle different response types
+                    if (result.success) {
+                        // All block list logic handled in sendMail
+                    } else if (result.rateLimited) {
+                        this.setProfileStatus(profileId, 'processing');
+                        await this.delay(50000, controller.signal);
+                        continue;
+                    } else if (result.shouldStop) {
+                        this.setProfileStatus(profileId, `Stopping due to: ${result.error}`);
+                        return;
+                    } else {
+                        // Other error - skip this batch
+                    }
+                } catch (error) {
+                    console.error(`Failed to send mail to batch:`, error);
+                }
+
+                // Normal delay between batches
+                await this.delay(7000, controller.signal);
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
@@ -277,38 +271,51 @@ const mailService = {
         });
     },
 
-    async getRecipientId(chatUid, token, profileId) {
+    // Utility to extract recipient ID from last message
+    getRecipientIdFromLastMessage(lastMessage, profileId) {
+        if (!lastMessage) {
+            console.log('[getRecipientIdFromLastMessage] No lastMessage provided');
+            return null;
+        }
+        if (lastMessage.message_type === 'NO_CHAT') {
+            console.log(`[getRecipientIdFromLastMessage] Skipping NO_CHAT for chat_uid: ${lastMessage.chat_uid}`);
+            return null;
+        }
+        const recipientId = lastMessage.recipient_external_id === profileId
+            ? lastMessage.sender_external_id
+            : lastMessage.recipient_external_id;
+        console.log(`[getRecipientIdFromLastMessage] chat_uid: ${lastMessage.chat_uid}, profileId: ${profileId}, sender_external_id: ${lastMessage.sender_external_id}, recipient_external_id: ${lastMessage.recipient_external_id}, extracted recipientId: ${recipientId}`);
+        return recipientId;
+    },
+
+    // Batch fetch last messages for all chatUids
+    async fetchLastMessages(chatUids, token) {
+        console.log('[fetchLastMessages called]');
+        if (!Array.isArray(chatUids) || chatUids.length === 0) return {};
         try {
-            const response = await fetch('https://alpha.date/api/chatList/chatHistory', {
+            const response = await fetch('https://alpha.date/api/chatList/lastMessage', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ chat_id: chatUid, page: 1 })
+                body: JSON.stringify({ chat_uid: chatUids })
             });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
+            if (!response.ok) throw new Error('Failed to fetch last messages');
             const data = await response.json();
-
-            const lastMessage = data.response[data.response.length - 1];
-
-            const recipientID = lastMessage.recipient_external_id === profileId
-                ? lastMessage.sender_external_id
-                : lastMessage.recipient_external_id;
-
-            return recipientID;
-
+            console.log('[LAST MESSAGE BATCH]:', data);
+            const map = {};
+            for (const msg of data.response) {
+                map[msg.chat_uid] = msg;
+            }
+            return map;
         } catch (error) {
-            console.error('Failed to get recipient ID:', error);
-            return null;
+            console.error('Failed to batch fetch last messages:', error);
+            return {};
         }
     },
 
-    async sendMail(profileId, recipientId, message, attachments, token) {
+    async sendMail(profileId, recipientIds, message, attachments, token) {
         // Format attachments according to API requirements
         const formattedAttachments = attachments.map(attachment => {
             if (!attachment || !attachment.filename || !attachment.link) {
@@ -332,20 +339,16 @@ const mailService = {
             return baseAttachment;
         }).filter(attachment => attachment !== null); // Remove any invalid attachments
 
-        // console.log('Formatted attachments:', formattedAttachments);
-
         try {
             const payload = {
                 user_id: profileId,
-                recipients: [recipientId],
+                recipients: recipientIds, // now an array
                 message_content: message,
                 message_type: "SENT_TEXT",
                 attachments: formattedAttachments,
                 parent_mail_id: null,
                 is_send_email: false
             };
-
-            // console.log('Sending mail with payload:', JSON.stringify(payload, null, 2));
 
             const mailResponse = await fetch('https://alpha.date/api/mailbox/mail', {
                 method: 'POST',
@@ -357,9 +360,11 @@ const mailService = {
             });
 
             const mailData = await mailResponse.json();
-            // console.log(`mailData response: ${JSON.stringify(mailData, null, 2)} profile ${profileId} man ${recipientId}`);
+            const hasRestrictionError = (blockReason) => blockReason.reason === "Restriction of sending a personal letter. Try when the list becomes active";
 
-            const hasRestrictionError = mailData.error === "Restriction of sending a personal letter. Try when the list becomes active";
+            if (mailResponse.ok) {
+                console.log('[MAIL RESPONSE: ', mailData)
+            }
 
             // Handle different HTTP status codes
             if (mailResponse.status === 429) {
@@ -389,17 +394,23 @@ const mailService = {
             }
 
             // Response is OK - check for API-level errors
-            if (hasRestrictionError) {
-                // Restriction error - skip this recipient but don't add to block list
-                return {
-                    success: false,
-                    error: 'Recipient restriction'
-                };
+            // Add to block list all except those with restriction error
+            const blockedExternalIds = (mailData.blocked_ids || []);
+            const blockReasons = (mailData.blockReasons || []);
+            const restrictionIds = new Set(
+                blockReasons
+                    .filter(hasRestrictionError)
+                    .map(reason => reason.manExternalId)
+            );
+
+            // Add to block list all recipients except those with restriction error
+            for (const recipientId of recipientIds) {
+                if (!restrictionIds.has(String(recipientId))) {
+                    this.addToBlockList(profileId, recipientId);
+                }
             }
 
-            // Success - add to block list to avoid sending again
-            this.addToBlockList(profileId, recipientId);
-            return { success: true };
+            return { success: true, message_id: mailData.message_id, blocked_ids: blockedExternalIds, blockReasons };
 
         } catch (error) {
             // Network or other errors

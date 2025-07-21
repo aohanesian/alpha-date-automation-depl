@@ -85,6 +85,10 @@ const chatService = {
 
                 this.setProfileStatus(profileId, `processing`);
 
+                // --- Batch fetch last messages ---
+                const chatUids = availableChats.map(chat => chat.chat_uid);
+                const lastMessagesMap = await this.fetchLastMessages(chatUids, token);
+
                 let sent = 0;
                 let skipped = 0;
 
@@ -94,11 +98,11 @@ const chatService = {
                         break;
                     }
 
-                    this.setProfileStatus(profileId,
-                        `processing`
-                    );
+                    this.setProfileStatus(profileId, `processing`);
 
-                    const recipientId = await this.getRecipientId(chat.chat_uid, token, profileId);
+                    // Use batch last message
+                    const lastMessage = lastMessagesMap[chat.chat_uid];
+                    const recipientId = this.getRecipientIdFromLastMessage(lastMessage, profileId);
 
                     if (!recipientId) {
                         skipped++;
@@ -238,42 +242,43 @@ const chatService = {
         });
     },
 
-    async getRecipientId(chatUid, token, profileId) {
+    // Utility to extract recipient ID from last message
+    getRecipientIdFromLastMessage(lastMessage, profileId) {
+        if (!lastMessage) return null;
+        return lastMessage.recipient_external_id === profileId
+            ? lastMessage.sender_external_id
+            : lastMessage.recipient_external_id;
+    },
+
+    // Batch fetch last messages for all chatUids
+    async fetchLastMessages(chatUids, token) {
+        console.log('[fetchLastMessages called]')
+        if (!Array.isArray(chatUids) || chatUids.length === 0) return {};
         try {
-            const response = await fetch('https://alpha.date/api/chatList/chatHistory', {
+            const response = await fetch('https://alpha.date/api/chatList/lastMessage', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ chat_id: chatUid, page: 1 })
+                body: JSON.stringify({ chat_uid: chatUids })
             });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
+            if (!response.ok) throw new Error('Failed to fetch last messages');
             const data = await response.json();
-
-            // console.log('Chat history data:', data);
-
-            const lastMessage = data.response[data.response.length - 1];
-
-            // console.log('Last message:', lastMessage);
-
-            const recipientID = lastMessage.recipient_external_id === profileId
-                ? lastMessage.sender_external_id
-                : lastMessage.recipient_external_id;
-
-            return recipientID;
-
+            console.log('[LAST MESSAGE BATCH]:', data);
+            const map = {};
+            for (const msg of data.response) {
+                map[msg.chat_uid] = msg;
+            }
+            return map;
         } catch (error) {
-            console.error(`Failed to get recipient ID: ${JSON.stringify(error)} for ${profileId} ${chatUid} data: ${JSON.stringify(data)}`);
-            return null;
+            console.error('Failed to batch fetch last messages:', error);
+            return {};
         }
     },
 
     async sendAttachmentMessage(senderId, recipientId, attachment, token) {
+        console.log('[ATTACHMENT: ]: ', attachment)
         // Determine message_type and content based on attachment type
         let message_type = '';
         let content_url = '';
@@ -366,6 +371,8 @@ const chatService = {
 
     async sendFollowUpMessage(senderId, recipientId, messageContent, token) {
 
+        console.log('[sendFollowUpMessage] CALLED MSG CONTET:', messageContent)
+
         if (!messageContent) return { success: true };
 
         try {
@@ -386,6 +393,7 @@ const chatService = {
             });
 
             const messageData = await response.json();
+            console.log('[DEBUG LIKES] ' + JSON.stringify(messageData) + ' for man ID ' + recipientId)
             const hasRestrictionError = messageData.error === "Restriction of sending a personal message. Try when the list becomes active";
 
             // Handle different HTTP status codes
