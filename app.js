@@ -91,8 +91,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
-        console.log('Making authenticated request to:', url);
-        console.log('With token:', token.substring(0, 20) + '...');
+        // console.log('Making authenticated request to:', url);
+        // console.log('With token:', token.substring(0, 20) + '...');
 
         return fetch(url, mergedOptions);
     }
@@ -102,16 +102,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await makeAuthenticatedRequest(`${API_URL}/chat/profiles`);
 
             if (response.status === 401) {
-                console.log('Session validation failed - 401 response');
+                // console.log('Session validation failed - 401 response');
                 return false;
             }
 
             const data = await response.json();
-            console.log('Session validation response:', data);
+            // console.log('Session validation response:', data);
 
             return response.ok;
         } catch (error) {
-            console.error('Session validation failed:', error);
+            // console.error('Session validation failed:', error);
             return false;
         }
     }
@@ -165,7 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 operatorId: loginData.operator_id
             };
 
-            console.log('Login successful, user data:', { email: userData.email, operatorId: userData.operatorId });
+            // console.log('Login successful, user data:', { email: userData.email, operatorId: userData.operatorId });
 
             // Step 2: Check whitelist with the obtained token
             const whitelistResponse = await fetch(`${API_URL}/auth/check-whitelist`, {
@@ -415,20 +415,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load Profiles
     async function loadProfiles() {
         try {
-            console.log('Loading profiles with token:', userData.token?.substring(0, 20) + '...');
+            // console.log('Loading profiles with token:', userData.token?.substring(0, 20) + '...');
 
             // Load chat profiles
             const chatResponse = await makeAuthenticatedRequest(`${API_URL}/chat/profiles`);
 
             if (chatResponse.status === 401) {
-                console.log('Chat profiles request returned 401');
+                // console.log('Chat profiles request returned 401');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
                 return;
             }
 
             const chatData = await chatResponse.json();
-            console.log('Chat profiles response:', chatData);
+            // console.log('Chat profiles response:', chatData);
 
             if (chatData.success) {
                 renderChatProfiles(chatData.profiles);
@@ -436,7 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Failed to load chat profiles:', chatData.message);
                 // If it's an auth error, show debug info
                 if (chatData.debug) {
-                    console.log('Debug info:', chatData.debug);
+                    // console.log('Debug info:', chatData.debug);
                 }
             }
 
@@ -444,14 +444,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const mailResponse = await makeAuthenticatedRequest(`${API_URL}/mail/profiles`);
 
             if (mailResponse.status === 401) {
-                console.log('Mail profiles request returned 401');
+                // console.log('Mail profiles request returned 401');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
                 return;
             }
 
             const mailData = await mailResponse.json();
-            console.log('Mail profiles response:', mailData);
+            // console.log('Mail profiles response:', mailData);
 
             if (mailData.success) {
                 renderMailProfiles(mailData.profiles);
@@ -465,7 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Failed to load profiles:', error);
             // If network error, might be session issue
             if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                console.log('Network error detected, clearing stored data');
+                // console.log('Network error detected, clearing stored data');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
             }
@@ -958,7 +958,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const data = await response.json();
-            console.log('Attachments response:', data); // Debug log
+            // console.log('Attachments response:', data);
 
             if (data.success) {
                 // Clear existing content
@@ -1453,7 +1453,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Save attachment selection to localStorage on change for chat and mail
     // For chat (radio)
-    document.addEventListener('change', function(e) {
+    document.addEventListener('change', function (e) {
         if (e.target.matches('.profile-item[data-profile-type="chat"] input[type="radio"].attachment-radio')) {
             const profileBlock = e.target.closest('.profile-item[data-profile-type="chat"]');
             if (profileBlock) {
