@@ -48,10 +48,11 @@ const mailService = {
 
                 const data = await response.json();
 
-                // Look for "send" folder in folders list
+                // Look for folder from environment variable (default: "send")
                 if (data.folders && typeof data.folders === 'object') {
+                    const folderName = process.env.VITE_ATTACHMENT_FOLDER_NAME || "send";
                     const sendFolder = Object.values(data.folders).find(folder =>
-                        folder.name.toLowerCase() === "send"
+                        folder.name.toLowerCase() === folderName.toLowerCase()
                     );
 
                     if (sendFolder && Array.isArray(sendFolder.list)) {

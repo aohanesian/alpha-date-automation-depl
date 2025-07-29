@@ -1091,7 +1091,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateAttachmentLimit();
 
         if (!hasAttachments) {
-            container.innerHTML = '<div class="status">No attachments available, to add attachments create folder with name "send" for each type of media</div>';
+            container.innerHTML = `<div class="status">No attachments available, to add attachments create folder with the "${import.meta.env.VITE_ATTACHMENT_FOLDER_NAME || 'send'}" name for each type of media</div>`;
         }
     }
 
@@ -1229,7 +1229,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         if (!hasAttachments) {
-            container.innerHTML += '<div class="status">No attachments available, to add attachments create folder with name "send" for each type of media</div>';
+            container.innerHTML += `<div class="status">No attachments available, to add attachments create folder with the "${import.meta.env.VITE_ATTACHMENT_FOLDER_NAME || 'send'}" name for each type of media</div>`;
         }
     }
 

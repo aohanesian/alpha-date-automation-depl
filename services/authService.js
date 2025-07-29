@@ -1,37 +1,28 @@
 // services/authService.js
 import fetch from 'node-fetch';
 
-// Cache for whitelisted emails
-let whitelistedEmails = [];
-let lastWhitelistFetch = 0;
-
 // Store intervals by operatorId
 const onlineHeartbeatIntervals = {};
 
 const authService = {
     async checkWhitelist(email) {
         try {
-            // Refresh whitelist every hour
-            const currentTime = Date.now();
-            if (currentTime - lastWhitelistFetch > 3600000 || whitelistedEmails.length === 0) {
-                // Fetch from both sources
-                const urls = [
-                    "https://firestore.googleapis.com/v1/projects/alpha-a4fdc/databases/(default)/documents/operator_whitelist",
-                    "https://firestore.googleapis.com/v1/projects/alpha-date-sender/databases/(default)/documents/operator_whitelist"
-                ];
-                let allEmails = [];
-                for (const url of urls) {
-                    const response = await fetch(url);
-                    const data = await response.json();
-                    const emails = data.documents?.[0]?.fields?.email?.arrayValue?.values?.map(item =>
-                        item.stringValue.toLowerCase()
-                    ) || [];
-                    allEmails = allEmails.concat(emails);
-                }
-                // Deduplicate
-                whitelistedEmails = Array.from(new Set(allEmails));
-                lastWhitelistFetch = currentTime;
+            // Fetch from both sources on every check
+            const urls = [
+                "https://firestore.googleapis.com/v1/projects/alpha-a4fdc/databases/(default)/documents/operator_whitelist",
+                "https://firestore.googleapis.com/v1/projects/alpha-date-sender/databases/(default)/documents/operator_whitelist"
+            ];
+            let allEmails = [];
+            for (const url of urls) {
+                const response = await fetch(url);
+                const data = await response.json();
+                const emails = data.documents?.[0]?.fields?.email?.arrayValue?.values?.map(item =>
+                    item.stringValue.toLowerCase()
+                ) || [];
+                allEmails = allEmails.concat(emails);
             }
+            // Deduplicate
+            const whitelistedEmails = Array.from(new Set(allEmails));
 
             return whitelistedEmails.includes(email.toLowerCase());
         } catch (error) {
