@@ -65,19 +65,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function makeAuthenticatedRequest(url, options = {}) {
-        const token = userData.token;
-
-        if (!token) {
-            throw new Error('No authentication token available');
-        }
-
         const defaultOptions = {
             credentials: 'include',
             headers: {
                 'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-                'X-Auth-Token': token
+                'Content-Type': 'application/json'
             }
         };
 
@@ -92,14 +84,13 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         // console.log('Making authenticated request to:', url);
-        // console.log('With token:', token.substring(0, 20) + '...');
 
         return fetch(url, mergedOptions);
     }
 
     async function validateSession() {
         try {
-            const response = await makeAuthenticatedRequest(`${API_URL}/chat/profiles`);
+            const response = await makeAuthenticatedRequest(`${API_URL}/auth/session-check`);
 
             if (response.status === 401) {
                 // console.log('Session validation failed - 401 response');
@@ -109,7 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             // console.log('Session validation response:', data);
 
-            return response.ok;
+            return data.success && data.hasToken;
         } catch (error) {
             // console.error('Session validation failed:', error);
             return false;
@@ -140,35 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ email, password })
             });
 
-            // Step 1: Login to get user data
-            const loginResponse = await fetch("https://alpha.date/api/login/login", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    email: email,
-                    password: password
-                })
-            });
-
-            if (!loginResponse.ok) {
-                throw new Error('Login failed - invalid credentials');
-            }
-
-            const loginData = await loginResponse.json();
-
-            // Extract user data from response
-            userData = {
-                email: email,
-                token: loginData.token,
-                operatorId: loginData.operator_id
-            };
-
-            // console.log('Login successful, user data:', { email: userData.email, operatorId: userData.operatorId });
-
-            // Step 2: Check whitelist with the obtained token
-            const whitelistResponse = await fetch(`${API_URL}/auth/check-whitelist`, {
+            // Use server-side login endpoint with Cloudflare detection
+            const loginResponse = await fetch(`${API_URL}/auth/login`, {
                 method: 'POST',
                 credentials: 'include',
                 headers: {
@@ -176,14 +140,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     'Accept': 'application/json'
                 },
                 body: JSON.stringify({
-                    email: userData.email,
-                    token: userData.token,
+                    email: email,
+                    password: password
                 })
             });
 
-            const whitelistData = await whitelistResponse.json();
+            const loginData = await loginResponse.json();
 
-            if (whitelistData.success) {
+            if (loginData.success) {
+                // Extract user data from response
+                userData = {
+                    email: email,
+                    token: loginData.userData.operatorId, // Use operatorId as token for session
+                    operatorId: loginData.userData.operatorId
+                };
+
                 // Store user data
                 localStorage.setItem('alphaAutoData', JSON.stringify(userData));
 
@@ -197,7 +168,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 loginStatus.textContent = 'Login successful!';
                 loginStatus.className = 'status success';
             } else {
-                displayLoginError('Not authorized: Email not in whitelist');
+                // Handle specific error types
+                if (loginData.error === 'cloudflare_challenge') {
+                    displayLoginError(`🛡️ Cloudflare protection detected. Alpha.Date is currently protected. Please try again in a few minutes or contact support.`);
+                } else if (loginData.error === 'not_whitelisted') {
+                    displayLoginError('Not authorized: Email not in whitelist');
+                } else if (loginData.error === 'auth_failed') {
+                    displayLoginError(`Authentication failed: ${loginData.details || 'Invalid credentials'}`);
+                } else {
+                    displayLoginError(loginData.message || 'Login failed');
+                }
             }
         } catch (error) {
             console.error('Login error:', error);
@@ -236,9 +216,23 @@ document.addEventListener('DOMContentLoaded', () => {
         logoutBtn.id = 'logout-btn';
         logoutBtn.textContent = 'Logout';
         logoutBtn.className = 'control-btn btn-clear';
-        logoutBtn.addEventListener('click', () => {
-            localStorage.removeItem('alphaAutoData');
-            location.reload();
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                // Call server logout endpoint
+                await fetch(`${API_URL}/auth/logout`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            } catch (error) {
+                console.error('Logout error:', error);
+            } finally {
+                // Clear local storage and reload regardless of server response
+                localStorage.removeItem('alphaAutoData');
+                location.reload();
+            }
         });
 
         // STOP ALL button
