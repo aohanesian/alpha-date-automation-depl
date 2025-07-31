@@ -56,13 +56,13 @@ app.use(bodyParser.json());
 app.use(session({
     secret: process.env.SESSION_SECRET || 'alpha-date-automation-secret-very-long-and-secure',
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: true, // Allow session creation for new users
     name: 'alphaSessionId', // Custom session name
     cookie: {
-        secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS !== 'false',
+        secure: true, // Always use secure cookies for HTTPS
         httpOnly: true,
         maxAge: 9 * 60 * 60 * 1000, // 9 hours in milliseconds
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+        sameSite: 'none' // Required for cross-origin requests with secure cookies
         // Removed domain setting - let it default to current domain for proper subdomain handling
     }
 }));
