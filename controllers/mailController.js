@@ -54,9 +54,7 @@ router.get('/profiles', async (req, res) => {
             });
         }
 
-        console.log('Attempting to fetch profiles with token (mail):', req.token ? req.token.substring(0, 20) + '...' : 'null');
         const profiles = await mailService.getProfiles(req.token);
-        console.log('Profiles fetched successfully (mail), count:', profiles.length || 0);
         res.json({ success: true, profiles });
     } catch (error) {
         console.error('Get mail profiles error:', error);

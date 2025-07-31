@@ -59,39 +59,28 @@ app.use(session({
     saveUninitialized: false,
     name: 'alphaSessionId', // Custom session name
     cookie: {
-        secure: process.env.NODE_ENV === 'production',
+        secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS !== 'false',
         httpOnly: true,
         maxAge: 9 * 60 * 60 * 1000, // 9 hours in milliseconds
-        sameSite: 'strict', // Use 'strict' for better security and compatibility
-        // domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined // Temporarily disabled for debugging
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined
     }
 }));
 
 // Enhanced session debugging middleware
 app.use((req, res, next) => {
-    // Only log for auth endpoints to reduce noise
-    if (req.url.includes('/auth/')) {
-        const timestamp = new Date().toISOString();
-        console.log(`\n=== REQUEST DEBUG ${timestamp} ===`);
-        console.log('Method:', req.method);
-        console.log('URL:', req.url);
-        console.log('Origin:', req.get('Origin'));
-        console.log('Cookie header:', req.get('Cookie'));
-        console.log('Session ID:', req.sessionID);
-        console.log('Session exists:', !!req.session);
-        console.log('Session data:', JSON.stringify(req.session, null, 2));
-        console.log('Session token present:', !!req.session?.token);
-        console.log('Session email:', req.session?.email);
-        
-        // Add response debugging
-        const originalSend = res.send;
-        res.send = function(data) {
-            console.log('Response headers:', res.getHeaders());
-            console.log('Set-Cookie header:', res.getHeader('Set-Cookie'));
-            console.log('=== END REQUEST DEBUG ===\n');
-            return originalSend.call(this, data);
-        };
-    }
+    // const timestamp = new Date().toISOString();
+    // console.log(`\n=== REQUEST DEBUG ${timestamp} ===`);
+    // console.log('Method:', req.method);
+    // console.log('URL:', req.url);
+    // console.log('Origin:', req.get('Origin'));
+    // console.log('Cookie header:', req.get('Cookie'));
+    // console.log('Session ID:', req.sessionID);
+    // console.log('Session exists:', !!req.session);
+    // console.log('Session data:', JSON.stringify(req.session, null, 2));
+    // console.log('Session token present:', !!req.session?.token);
+    // console.log('Session email:', req.session?.email);
+    // console.log('=== END REQUEST DEBUG ===\n');
     next();
 });
 
@@ -138,18 +127,13 @@ app.post('/api/auth-test', (req, res) => {
         tokens: {
             authHeader: authHeader,
             customToken: customToken,
-            sessionToken: sessionToken ? sessionToken.substring(0, 20) + '...' : null
+            sessionToken: sessionToken
         },
         hasAnyToken: !!(authHeader || customToken || sessionToken),
         sessionInfo: {
             sessionId: req.sessionID,
             hasSession: !!req.session,
-            sessionData: {
-                email: req.session?.email,
-                operatorId: req.session?.operatorId,
-                tokenPresent: !!req.session?.token,
-                tokenLength: req.session?.token ? req.session.token.length : 0
-            }
+            sessionData: req.session
         },
         timestamp: new Date().toISOString()
     });

@@ -16,8 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginStatus = document.getElementById('login-status');
     const emailInput = document.getElementById('email');
     const passwordInput = document.getElementById('password');
-    
-
     const chatProfilesContainer = document.getElementById('chat-profiles-container');
     const mailProfilesContainer = document.getElementById('mail-profiles-container');
     const toggleAttachments = document.getElementById('toggle-attachments');
@@ -34,47 +32,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // Check for stored login on page load
     checkStoredLogin();
 
-
-
     async function checkStoredLogin() {
-        console.log('[DEBUG] checkStoredLogin called');
-        
-        // Add a small delay to ensure session is established (especially after extension login)
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Check if there's a valid server-side session first
-        try {
-            console.log('[DEBUG] Validating session...');
-            const isValid = await validateSession();
-            console.log('[DEBUG] Session validation result:', isValid);
-            
-            if (isValid) {
-                console.log('[DEBUG] Session is valid, switching to main interface');
-                // Server session is valid, switch to main interface
-                loginForm.style.display = 'none';
-                mainContainer.style.display = 'block';
-                await loadProfiles();
-                loginStatus.textContent = 'Session restored successfully!';
-                loginStatus.className = 'status success';
-                return;
-            } else {
-                console.log('[DEBUG] Session is not valid');
-            }
-        } catch (error) {
-            console.error('[DEBUG] Session validation failed:', error);
-        }
-
-        // Fallback to stored login data (for backward compatibility)
         const storedData = localStorage.getItem('alphaAutoData');
         if (storedData) {
             try {
                 userData = JSON.parse(storedData);
                 emailInput.value = userData.email;
-                
-                // Clear old stored data since we're using server sessions now
-                localStorage.removeItem('alphaAutoData');
-                loginStatus.textContent = 'Please login again (session expired)';
-                loginStatus.className = 'status error';
+
+                // Try to validate the stored session
+                loginStatus.textContent = 'Checking stored session...';
+                loginStatus.className = 'status processing';
+
+                const isValid = await validateSession();
+                if (isValid) {
+                    // Session is valid, switch to main interface
+                    loginForm.style.display = 'none';
+                    mainContainer.style.display = 'block';
+                    await loadProfiles();
+                    loginStatus.textContent = 'Session restored successfully!';
+                    loginStatus.className = 'status success';
+                } else {
+                    // Session is invalid, clear stored data
+                    localStorage.removeItem('alphaAutoData');
+                    loginStatus.textContent = 'Session expired, please login again';
+                    loginStatus.className = 'status error';
+                }
             } catch (error) {
                 console.error('Failed to parse stored data:', error);
                 localStorage.removeItem('alphaAutoData');
@@ -83,8 +65,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function makeAuthenticatedRequest(url, options = {}) {
+        // Use session-based authentication instead of local storage token
         const defaultOptions = {
-            credentials: 'include',
+            credentials: 'include', // Include session cookies
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
@@ -108,32 +91,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function validateSession() {
         try {
-            console.log('[DEBUG] Making session check request to:', `${API_URL}/auth/session-check`);
-            const response = await makeAuthenticatedRequest(`${API_URL}/auth/session-check`);
+            const response = await makeAuthenticatedRequest(`${API_URL}/chat/profiles`);
 
-            console.log('[DEBUG] Session check response status:', response.status);
-            
             if (response.status === 401) {
-                console.log('[DEBUG] Session validation failed - 401 response');
+                // console.log('Session validation failed - 401 response');
                 return false;
             }
 
             const data = await response.json();
-            console.log('[DEBUG] Session validation response data:', data);
+            // console.log('Session validation response:', data);
 
-            const result = data.success && data.hasToken;
-            console.log('[DEBUG] Session validation result:', result);
-            return result;
+            return response.ok;
         } catch (error) {
-            console.error('[DEBUG] Session validation failed:', error);
+            // console.error('Session validation failed:', error);
             return false;
         }
     }
 
     // Login Handler
-    loginBtn.addEventListener('click', handleCredentialsLogin);
-
-    async function handleCredentialsLogin() {
+    loginBtn.addEventListener('click', async () => {
         const email = emailInput.value.trim();
         const password = passwordInput.value.trim();
 
@@ -156,8 +132,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ email, password })
             });
 
-            // Use server-side login endpoint with Cloudflare detection
-            const loginResponse = await fetch(`${API_URL}/auth/login`, {
+            // Use new backend authentication endpoint
+            const authResponse = await fetch(`${API_URL}/auth/alpha-login`, {
                 method: 'POST',
                 credentials: 'include',
                 headers: {
@@ -170,18 +146,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
             });
 
-            const loginData = await loginResponse.json();
+            const authData = await authResponse.json();
 
-            if (loginData.success) {
-                // Extract user data from response (for display purposes only)
+            if (authData.success) {
+                // Extract user data from response
                 userData = {
                     email: email,
-                    operatorId: loginData.userData.operatorId
+                    token: 'session-based', // Token is now managed in session
+                    operatorId: authData.userData.operatorId
                 };
 
-                // Don't store token in localStorage - it's now handled server-side
-                // Only store email for convenience
-                localStorage.setItem('alphaAutoData', JSON.stringify({ email: email }));
+                // Store user data
+                localStorage.setItem('alphaAutoData', JSON.stringify(userData));
 
                 // Switch to main interface
                 loginForm.style.display = 'none';
@@ -193,15 +169,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 loginStatus.textContent = 'Login successful!';
                 loginStatus.className = 'status success';
             } else {
-                // Handle specific error types
-                if (loginData.error === 'cloudflare_challenge') {
-                    displayLoginError(`🛡️ Cloudflare protection detected. Alpha.Date is currently protected. Please try again in a few minutes or contact support.`);
-                } else if (loginData.error === 'not_whitelisted') {
-                    displayLoginError('Not authorized: Email not in whitelist');
-                } else if (loginData.error === 'auth_failed') {
-                    displayLoginError(`Authentication failed: ${loginData.details || 'Invalid credentials'}`);
+                // Handle different error types
+                if (authData.error === 'cloudflare_challenge') {
+                    displayCloudflareError(authData);
                 } else {
-                    displayLoginError(loginData.message || 'Login failed');
+                    displayLoginError(authData.message || 'Authentication failed');
                 }
             }
         } catch (error) {
@@ -210,12 +182,33 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             loginBtn.disabled = false;
         }
-    }
-
-
+    });
 
     function displayLoginError(message) {
         loginStatus.textContent = message;
+        loginStatus.className = 'status error';
+    }
+
+    function displayCloudflareError(authData) {
+        loginStatus.innerHTML = `
+            <div style="text-align: left; font-size: 14px;">
+                <div style="color: #ff6b6b; font-weight: bold; margin-bottom: 8px;">
+                    ${authData.message}
+                </div>
+                <div style="color: #666; font-size: 12px; margin-bottom: 8px;">
+                    Status: ${authData.details.status} | Content-Type: ${authData.details.contentType}
+                </div>
+                ${authData.challengeFile ? `
+                    <div style="color: #555; font-size: 12px; margin-bottom: 8px;">
+                        📁 Challenge saved: ${authData.challengeFile.split('/').pop()}
+                    </div>
+                ` : ''}
+                <div style="color: #888; font-size: 11px;">
+                    <strong>Possible solutions:</strong><br>
+                    ${authData.details.possibleSolutions.map(solution => `• ${solution}`).join('<br>')}
+                </div>
+            </div>
+        `;
         loginStatus.className = 'status error';
     }
 
@@ -243,23 +236,9 @@ document.addEventListener('DOMContentLoaded', () => {
         logoutBtn.id = 'logout-btn';
         logoutBtn.textContent = 'Logout';
         logoutBtn.className = 'control-btn btn-clear';
-        logoutBtn.addEventListener('click', async () => {
-            try {
-                // Call server logout endpoint
-                await fetch(`${API_URL}/auth/logout`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-            } catch (error) {
-                console.error('Logout error:', error);
-            } finally {
-                // Clear local storage and reload regardless of server response
-                localStorage.removeItem('alphaAutoData');
-                location.reload();
-            }
+        logoutBtn.addEventListener('click', () => {
+            localStorage.removeItem('alphaAutoData');
+            location.reload();
         });
 
         // STOP ALL button
@@ -435,25 +414,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load Profiles
     async function loadProfiles() {
-        console.log('[DEBUG] loadProfiles called');
         try {
-            console.log('[DEBUG] Loading profiles...');
+            // console.log('Loading profiles with token:', userData.token?.substring(0, 20) + '...');
 
             // Load chat profiles
-            console.log('[DEBUG] Loading chat profiles...');
             const chatResponse = await makeAuthenticatedRequest(`${API_URL}/chat/profiles`);
 
-            console.log('[DEBUG] Chat profiles response status:', chatResponse.status);
-            
             if (chatResponse.status === 401) {
-                console.log('[DEBUG] Chat profiles request returned 401');
+                // console.log('Chat profiles request returned 401');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
                 return;
             }
 
             const chatData = await chatResponse.json();
-            console.log('[DEBUG] Chat profiles response data:', chatData);
+            // console.log('Chat profiles response:', chatData);
 
             if (chatData.success) {
                 renderChatProfiles(chatData.profiles);
@@ -466,20 +441,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Load mail profiles
-            console.log('[DEBUG] Loading mail profiles...');
             const mailResponse = await makeAuthenticatedRequest(`${API_URL}/mail/profiles`);
 
-            console.log('[DEBUG] Mail profiles response status:', mailResponse.status);
-            
             if (mailResponse.status === 401) {
-                console.log('[DEBUG] Mail profiles request returned 401');
+                // console.log('Mail profiles request returned 401');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
                 return;
             }
 
             const mailData = await mailResponse.json();
-            console.log('[DEBUG] Mail profiles response data:', mailData);
+            // console.log('Mail profiles response:', mailData);
 
             if (mailData.success) {
                 renderMailProfiles(mailData.profiles);
