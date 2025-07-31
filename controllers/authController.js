@@ -505,15 +505,50 @@ router.post('/login-extension', async (req, res) => {
     }
 });
 
+// Simple cookie test endpoint
+router.get('/cookie-test', (req, res) => {
+    console.log(`[DEBUG] Cookie test endpoint hit`);
+    console.log(`[DEBUG] Request cookies:`, req.headers.cookie);
+    
+    // Set a simple cookie
+    res.cookie('testCookie', 'test-value-' + Date.now(), {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 1000 // 1 minute
+    });
+    
+    res.json({
+        success: true,
+        message: 'Cookie test endpoint working',
+        timestamp: new Date().toISOString(),
+        requestCookies: req.headers.cookie,
+        sessionId: req.sessionID
+    });
+});
+
 // Test endpoint for extension debugging
 router.get('/extension-test', (req, res) => {
     console.log(`[DEBUG] Extension test endpoint hit`);
-    res.json({
-        success: true,
-        message: 'Extension test endpoint working',
-        timestamp: new Date().toISOString(),
-        sessionId: req.sessionID,
-        hasSession: !!req.session
+    
+    // Set a test value in session
+    req.session.testValue = 'test-' + Date.now();
+    req.session.save((err) => {
+        if (err) {
+            console.error('[DEBUG] Session save error in test:', err);
+        } else {
+            console.log('[DEBUG] Test session saved successfully');
+        }
+        
+        res.json({
+            success: true,
+            message: 'Extension test endpoint working',
+            timestamp: new Date().toISOString(),
+            sessionId: req.sessionID,
+            hasSession: !!req.session,
+            testValue: req.session.testValue,
+            cookies: req.headers.cookie
+        });
     });
 });
 

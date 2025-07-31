@@ -59,10 +59,10 @@ app.use(session({
     saveUninitialized: false,
     name: 'alphaSessionId', // Custom session name
     cookie: {
-        secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS !== 'false',
+        secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
         maxAge: 9 * 60 * 60 * 1000, // 9 hours in milliseconds
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        sameSite: 'strict', // Use 'strict' for better security and compatibility
         // domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined // Temporarily disabled for debugging
     }
 }));
@@ -82,7 +82,15 @@ app.use((req, res, next) => {
         console.log('Session data:', JSON.stringify(req.session, null, 2));
         console.log('Session token present:', !!req.session?.token);
         console.log('Session email:', req.session?.email);
-        console.log('=== END REQUEST DEBUG ===\n');
+        
+        // Add response debugging
+        const originalSend = res.send;
+        res.send = function(data) {
+            console.log('Response headers:', res.getHeaders());
+            console.log('Set-Cookie header:', res.getHeader('Set-Cookie'));
+            console.log('=== END REQUEST DEBUG ===\n');
+            return originalSend.call(this, data);
+        };
     }
     next();
 });
