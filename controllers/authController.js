@@ -89,6 +89,8 @@ router.post('/login', async (req, res) => {
             console.log(`[INFO] Login successful for: ${email}`);
             console.log('Session after login:', req.session);
             console.log('Session ID:', req.sessionID);
+            console.log('Session token stored:', !!req.session.token);
+            console.log('Session token length:', req.session.token ? req.session.token.length : 0);
 
             return res.json({
                 success: true,
@@ -188,11 +190,12 @@ router.get('/session-check', (req, res) => {
         success: true,
         hasSession: !!req.session,
         sessionId: req.sessionID,
-        hasToken: !!req.session.token,
-        hasEmail: !!req.session.email,
+        hasToken: !!req.session?.token,
+        hasEmail: !!req.session?.email,
         sessionData: {
-            email: req.session.email || 'not set',
-            tokenPresent: !!req.session.token
+            email: req.session?.email || 'not set',
+            tokenPresent: !!req.session?.token,
+            tokenLength: req.session?.token ? req.session.token.length : 0
         }
     });
 });

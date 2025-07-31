@@ -33,30 +33,33 @@ document.addEventListener('DOMContentLoaded', () => {
     checkStoredLogin();
 
     async function checkStoredLogin() {
+        // Check if there's a valid server-side session first
+        try {
+            const isValid = await validateSession();
+            if (isValid) {
+                // Server session is valid, switch to main interface
+                loginForm.style.display = 'none';
+                mainContainer.style.display = 'block';
+                await loadProfiles();
+                loginStatus.textContent = 'Session restored successfully!';
+                loginStatus.className = 'status success';
+                return;
+            }
+        } catch (error) {
+            console.error('Session validation failed:', error);
+        }
+
+        // Fallback to stored login data (for backward compatibility)
         const storedData = localStorage.getItem('alphaAutoData');
         if (storedData) {
             try {
                 userData = JSON.parse(storedData);
                 emailInput.value = userData.email;
-
-                // Try to validate the stored session
-                loginStatus.textContent = 'Checking stored session...';
-                loginStatus.className = 'status processing';
-
-                const isValid = await validateSession();
-                if (isValid) {
-                    // Session is valid, switch to main interface
-                    loginForm.style.display = 'none';
-                    mainContainer.style.display = 'block';
-                    await loadProfiles();
-                    loginStatus.textContent = 'Session restored successfully!';
-                    loginStatus.className = 'status success';
-                } else {
-                    // Session is invalid, clear stored data
-                    localStorage.removeItem('alphaAutoData');
-                    loginStatus.textContent = 'Session expired, please login again';
-                    loginStatus.className = 'status error';
-                }
+                
+                // Clear old stored data since we're using server sessions now
+                localStorage.removeItem('alphaAutoData');
+                loginStatus.textContent = 'Please login again (session expired)';
+                loginStatus.className = 'status error';
             } catch (error) {
                 console.error('Failed to parse stored data:', error);
                 localStorage.removeItem('alphaAutoData');
@@ -148,15 +151,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const loginData = await loginResponse.json();
 
             if (loginData.success) {
-                // Extract user data from response
+                // Extract user data from response (for display purposes only)
                 userData = {
                     email: email,
-                    token: loginData.userData.operatorId, // Use operatorId as token for session
                     operatorId: loginData.userData.operatorId
                 };
 
-                // Store user data
-                localStorage.setItem('alphaAutoData', JSON.stringify(userData));
+                // Don't store token in localStorage - it's now handled server-side
+                // Only store email for convenience
+                localStorage.setItem('alphaAutoData', JSON.stringify({ email: email }));
 
                 // Switch to main interface
                 loginForm.style.display = 'none';
