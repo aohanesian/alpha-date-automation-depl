@@ -54,7 +54,9 @@ router.get('/profiles', async (req, res) => {
             });
         }
 
+        console.log('Attempting to fetch profiles with token:', req.token ? req.token.substring(0, 20) + '...' : 'null');
         const profiles = await chatService.getProfiles(req.token);
+        console.log('Profiles fetched successfully, count:', profiles.length || 0);
         res.json({ success: true, profiles });
     } catch (error) {
         console.error('Get profiles error:', error);

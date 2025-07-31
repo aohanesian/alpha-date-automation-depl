@@ -127,13 +127,18 @@ app.post('/api/auth-test', (req, res) => {
         tokens: {
             authHeader: authHeader,
             customToken: customToken,
-            sessionToken: sessionToken
+            sessionToken: sessionToken ? sessionToken.substring(0, 20) + '...' : null
         },
         hasAnyToken: !!(authHeader || customToken || sessionToken),
         sessionInfo: {
             sessionId: req.sessionID,
             hasSession: !!req.session,
-            sessionData: req.session
+            sessionData: {
+                email: req.session?.email,
+                operatorId: req.session?.operatorId,
+                tokenPresent: !!req.session?.token,
+                tokenLength: req.session?.token ? req.session.token.length : 0
+            }
         },
         timestamp: new Date().toISOString()
     });

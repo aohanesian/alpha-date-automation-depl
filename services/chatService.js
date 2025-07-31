@@ -13,15 +13,25 @@ const invites = {};
 const chatService = {
     async getProfiles(token) {
         try {
+            console.log('Making direct Alpha.Date API call to fetch profiles');
+            console.log('Token being used:', token ? token.substring(0, 20) + '...' : 'null');
+            
             const response = await fetch('https://alpha.date/api/operator/profiles', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
+            console.log('Alpha.Date API response status:', response.status);
+            console.log('Alpha.Date API response headers:', Object.fromEntries(response.headers.entries()));
+
             if (!response.ok) {
-                throw new Error(`Failed to load profiles: ${response.statusText}`);
+                const errorText = await response.text();
+                console.error('Alpha.Date API error response:', errorText);
+                throw new Error(`Failed to load profiles: ${response.status} - ${errorText}`);
             }
 
-            return await response.json();
+            const profiles = await response.json();
+            console.log('Alpha.Date API profiles response:', profiles);
+            return profiles;
         } catch (error) {
             console.error('Profile loading failed:', error);
             throw error;
