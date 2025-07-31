@@ -168,6 +168,7 @@ router.post('/alpha-login', async (req, res) => {
                 success: true,
                 message: 'Authentication successful',
                 sessionId: req.sessionID,
+                sessionToken: req.sessionID, // Send session ID as token for API requests
                 userData: {
                     email: email,
                     operatorId: authResult.operatorId

@@ -65,14 +65,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function makeAuthenticatedRequest(url, options = {}) {
-        // Use session-based authentication instead of local storage token
+        // Get session token from stored user data
+        const userData = JSON.parse(localStorage.getItem('alphaAutoData') || '{}');
+        const sessionToken = userData.sessionToken;
+
         const defaultOptions = {
-            credentials: 'include', // Include session cookies
+            credentials: 'include', // Include session cookies as fallback
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
             }
         };
+
+        // Add session token to headers if available
+        if (sessionToken) {
+            defaultOptions.headers['X-Session-Token'] = sessionToken;
+        }
 
         // Merge headers
         const mergedOptions = {
@@ -84,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
-        // console.log('Making authenticated request to:', url);
+        // console.log('Making authenticated request to:', url, 'with session token:', sessionToken);
 
         return fetch(url, mergedOptions);
     }
@@ -153,7 +161,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 userData = {
                     email: email,
                     token: 'session-based', // Token is now managed in session
-                    operatorId: authData.userData.operatorId
+                    operatorId: authData.userData.operatorId,
+                    sessionToken: authData.sessionToken // Store session token for API requests
                 };
 
                 // Store user data

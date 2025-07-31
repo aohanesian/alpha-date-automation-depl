@@ -21,10 +21,30 @@ function extractToken(req, res, next) {
         return next();
     }
 
-    // Fallback to session token
+    // Try to get session token from X-Session-Token header
+    const sessionToken = req.get('X-Session-Token');
+    if (sessionToken) {
+        // Look up session by ID and extract token
+        req.sessionStore.get(sessionToken, (err, sessionData) => {
+            if (!err && sessionData && sessionData.token) {
+                req.token = sessionData.token;
+                req.userEmail = sessionData.email;
+                req.operatorId = sessionData.operatorId;
+                console.log('Token from session store:', req.token);
+                return next();
+            } else {
+                console.log('Session token not found or expired:', sessionToken);
+                req.token = null;
+                next();
+            }
+        });
+        return;
+    }
+
+    // Fallback to current session token
     if (req.session && req.session.token) {
         req.token = req.session.token;
-        console.log('Token from session:', req.token);
+        console.log('Token from current session:', req.token);
         return next();
     }
 
