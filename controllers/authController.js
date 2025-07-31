@@ -215,6 +215,14 @@ router.post('/online-status', async (req, res) => {
 
 // Check session status (optional endpoint for debugging)
 router.get('/session-check', (req, res) => {
+    console.log(`[DEBUG] Session check request:`);
+    console.log(`[DEBUG] - Session ID: ${req.sessionID}`);
+    console.log(`[DEBUG] - Has session: ${!!req.session}`);
+    console.log(`[DEBUG] - Session data:`, req.session);
+    console.log(`[DEBUG] - Has token: ${!!req.session?.token}`);
+    console.log(`[DEBUG] - Has email: ${!!req.session?.email}`);
+    console.log(`[DEBUG] - Token length: ${req.session?.token ? req.session.token.length : 0}`);
+    
     res.json({
         success: true,
         hasSession: !!req.session,
@@ -426,9 +434,19 @@ router.post('/login-extension', async (req, res) => {
         }
 
         // Step 4: Store in session
+        console.log(`[DEBUG] Storing session data for extension login:`);
+        console.log(`[DEBUG] - Email: ${decodedEmail}`);
+        console.log(`[DEBUG] - Token length: ${jwtToken.length}`);
+        console.log(`[DEBUG] - Session ID before save: ${req.sessionID}`);
+        
         req.session.email = decodedEmail;
         req.session.token = jwtToken; // Store the JWT token directly
         req.session.operatorId = decodedEmail; // Use email as operatorId for JWT login
+
+        console.log(`[DEBUG] Session data after assignment:`);
+        console.log(`[DEBUG] - req.session.email: ${req.session.email}`);
+        console.log(`[DEBUG] - req.session.token present: ${!!req.session.token}`);
+        console.log(`[DEBUG] - req.session.token length: ${req.session.token ? req.session.token.length : 0}`);
 
         // Step 5: Start server-side online heartbeat (optional for JWT)
         // authService.startOperatorOnlineHeartbeat(decodedEmail, jwtToken);
@@ -436,12 +454,20 @@ router.post('/login-extension', async (req, res) => {
         // Force session save
         req.session.save((err) => {
             if (err) {
-                console.error('Session save error:', err);
+                console.error('[DEBUG] Session save error:', err);
                 return res.status(500).json({ 
                     success: false, 
                     message: 'Session error' 
                 });
             }
+
+            console.log(`[DEBUG] Session save successful for extension login`);
+            console.log(`[DEBUG] Session ID after save: ${req.sessionID}`);
+            console.log(`[DEBUG] Session data after save:`);
+            console.log(`[DEBUG] - req.session.email: ${req.session.email}`);
+            console.log(`[DEBUG] - req.session.token present: ${!!req.session.token}`);
+            console.log(`[DEBUG] - req.session.token length: ${req.session.token ? req.session.token.length : 0}`);
+            console.log(`[DEBUG] - req.session.operatorId: ${req.session.operatorId}`);
 
             console.log(`[INFO] Extension login successful for: ${decodedEmail}`);
             console.log('Session after extension login:', req.session);

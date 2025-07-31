@@ -63,24 +63,27 @@ app.use(session({
         httpOnly: true,
         maxAge: 9 * 60 * 60 * 1000, // 9 hours in milliseconds
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined
+        // domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined // Temporarily disabled for debugging
     }
 }));
 
 // Enhanced session debugging middleware
 app.use((req, res, next) => {
-    // const timestamp = new Date().toISOString();
-    // console.log(`\n=== REQUEST DEBUG ${timestamp} ===`);
-    // console.log('Method:', req.method);
-    // console.log('URL:', req.url);
-    // console.log('Origin:', req.get('Origin'));
-    // console.log('Cookie header:', req.get('Cookie'));
-    // console.log('Session ID:', req.sessionID);
-    // console.log('Session exists:', !!req.session);
-    // console.log('Session data:', JSON.stringify(req.session, null, 2));
-    // console.log('Session token present:', !!req.session?.token);
-    // console.log('Session email:', req.session?.email);
-    // console.log('=== END REQUEST DEBUG ===\n');
+    // Only log for auth endpoints to reduce noise
+    if (req.url.includes('/auth/')) {
+        const timestamp = new Date().toISOString();
+        console.log(`\n=== REQUEST DEBUG ${timestamp} ===`);
+        console.log('Method:', req.method);
+        console.log('URL:', req.url);
+        console.log('Origin:', req.get('Origin'));
+        console.log('Cookie header:', req.get('Cookie'));
+        console.log('Session ID:', req.sessionID);
+        console.log('Session exists:', !!req.session);
+        console.log('Session data:', JSON.stringify(req.session, null, 2));
+        console.log('Session token present:', !!req.session?.token);
+        console.log('Session email:', req.session?.email);
+        console.log('=== END REQUEST DEBUG ===\n');
+    }
     next();
 });
 
