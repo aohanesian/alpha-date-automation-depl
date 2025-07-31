@@ -203,9 +203,40 @@ router.get('/session-check', (req, res) => {
 
 // Test session persistence endpoint
 router.post('/test-session', (req, res) => {
-    const { testValue } = req.body;
+    const { testValue, createAuthSession } = req.body;
     
-    if (testValue) {
+    if (createAuthSession) {
+        // Create a test authentication session
+        req.session.testValue = testValue || 'test-auth-session';
+        req.session.testTimestamp = new Date().toISOString();
+        req.session.token = 'test-auth-token-12345';
+        req.session.email = 'test@example.com';
+        req.session.operatorId = 'TEST_OP_123';
+        
+        req.session.save((err) => {
+            if (err) {
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Session save error',
+                    error: err.message 
+                });
+            }
+            
+            res.json({
+                success: true,
+                message: 'Test auth session created',
+                sessionId: req.sessionID,
+                sessionToken: req.sessionID,
+                saved: {
+                    testValue: req.session.testValue,
+                    testTimestamp: req.session.testTimestamp,
+                    hasToken: !!req.session.token,
+                    email: req.session.email,
+                    operatorId: req.session.operatorId
+                }
+            });
+        });
+    } else if (testValue) {
         req.session.testValue = testValue;
         req.session.testTimestamp = new Date().toISOString();
         
@@ -237,7 +268,8 @@ router.post('/test-session', (req, res) => {
                 testValue: req.session.testValue || 'not set',
                 testTimestamp: req.session.testTimestamp || 'not set',
                 hasToken: !!req.session.token,
-                email: req.session.email || 'not set'
+                email: req.session.email || 'not set',
+                operatorId: req.session.operatorId || 'not set'
             }
         });
     }
