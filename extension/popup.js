@@ -187,10 +187,11 @@ async function loginWithExtension() {
             document.getElementById('login-result').classList.remove('hidden');
             button.textContent = '✅ Login successful!';
             
-            // Refresh the page after a short delay
+            // Refresh the page after a longer delay to ensure session is established
             setTimeout(() => {
+                console.log('[EXTENSION] Refreshing page after extension login');
                 chrome.tabs.reload(tab.id);
-            }, 1500);
+            }, 3000);
         } else {
             throw new Error('Failed to login with extension');
         }
@@ -207,9 +208,16 @@ async function loginWithExtension() {
 // Content script function to login with extension
 function loginWithExtensionOnPage(token) {
     try {
+        console.log('[EXTENSION] Attempting to login with extension');
+        console.log('[EXTENSION] Token length:', token ? token.length : 0);
+        
         // Call the new extension login endpoint
-        return fetch('/api/auth/login-extension', {
+        const apiUrl = `${window.location.origin}/api/auth/login-extension`;
+        console.log('[EXTENSION] API URL:', apiUrl);
+        
+        return fetch(apiUrl, {
             method: 'POST',
+            credentials: 'include', // Include cookies for session
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
@@ -218,22 +226,26 @@ function loginWithExtensionOnPage(token) {
                 jwtToken: token
             })
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log('[EXTENSION] Login response status:', response.status);
+            return response.json();
+        })
         .then(data => {
+            console.log('[EXTENSION] Login response data:', data);
             if (data.success) {
-                console.log('Extension login successful');
+                console.log('[EXTENSION] Extension login successful');
                 return true;
             } else {
-                console.error('Extension login failed:', data.message);
+                console.error('[EXTENSION] Extension login failed:', data.message);
                 return false;
             }
         })
         .catch(error => {
-            console.error('Extension login error:', error);
+            console.error('[EXTENSION] Extension login error:', error);
             return false;
         });
     } catch (error) {
-        console.error('Error logging in with extension:', error);
+        console.error('[EXTENSION] Error logging in with extension:', error);
         return false;
     }
 }

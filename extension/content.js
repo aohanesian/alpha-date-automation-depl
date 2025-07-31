@@ -1,24 +1,24 @@
-// content.js - Content script for automation tool pages
-console.log('Alpha Date Token Extractor: Content script loaded');
-
-// Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'loginWithExtension') {
         loginWithExtension(request.token).then(success => {
             sendResponse({ success });
         });
-        return true; // Keep message channel open for async response
+        return true;
     }
 });
 
-// Function to login with extension
 async function loginWithExtension(token) {
     try {
-        console.log('Attempting to login with extension');
+        console.log('[CONTENT] Attempting to login with extension');
+        console.log('[CONTENT] Current URL:', window.location.href);
         
-        // Call the extension login endpoint
-        const response = await fetch('/api/auth/login-extension', {
+        // Use the current page's origin for the API call
+        const apiUrl = `${window.location.origin}/api/auth/login-extension`;
+        console.log('[CONTENT] API URL:', apiUrl);
+        
+        const response = await fetch(apiUrl, {
             method: 'POST',
+            credentials: 'include', // Include cookies for session
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
@@ -27,24 +27,25 @@ async function loginWithExtension(token) {
                 jwtToken: token
             })
         });
-        
+
+        console.log('[CONTENT] Login response status:', response.status);
         const data = await response.json();
-        
+        console.log('[CONTENT] Login response data:', data);
+
         if (data.success) {
-            console.log('Extension login successful');
+            console.log('[CONTENT] Extension login successful');
             return true;
         } else {
-            console.error('Extension login failed:', data.message);
+            console.error('[CONTENT] Extension login failed:', data.message);
             return false;
         }
-        
+
     } catch (error) {
         console.error('Error logging in with extension:', error);
         return false;
     }
 }
 
-// Login function that can be called from popup
 async function loginWithExtensionOnPage(token) {
     return await loginWithExtension(token);
 } 

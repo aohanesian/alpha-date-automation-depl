@@ -37,10 +37,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     async function checkStoredLogin() {
+        console.log('[DEBUG] checkStoredLogin called');
+        
+        // Add a small delay to ensure session is established (especially after extension login)
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
         // Check if there's a valid server-side session first
         try {
+            console.log('[DEBUG] Validating session...');
             const isValid = await validateSession();
+            console.log('[DEBUG] Session validation result:', isValid);
+            
             if (isValid) {
+                console.log('[DEBUG] Session is valid, switching to main interface');
                 // Server session is valid, switch to main interface
                 loginForm.style.display = 'none';
                 mainContainer.style.display = 'block';
@@ -48,9 +57,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 loginStatus.textContent = 'Session restored successfully!';
                 loginStatus.className = 'status success';
                 return;
+            } else {
+                console.log('[DEBUG] Session is not valid');
             }
         } catch (error) {
-            console.error('Session validation failed:', error);
+            console.error('[DEBUG] Session validation failed:', error);
         }
 
         // Fallback to stored login data (for backward compatibility)
@@ -97,19 +108,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function validateSession() {
         try {
+            console.log('[DEBUG] Making session check request to:', `${API_URL}/auth/session-check`);
             const response = await makeAuthenticatedRequest(`${API_URL}/auth/session-check`);
 
+            console.log('[DEBUG] Session check response status:', response.status);
+            
             if (response.status === 401) {
-                // console.log('Session validation failed - 401 response');
+                console.log('[DEBUG] Session validation failed - 401 response');
                 return false;
             }
 
             const data = await response.json();
-            // console.log('Session validation response:', data);
+            console.log('[DEBUG] Session validation response data:', data);
 
-            return data.success && data.hasToken;
+            const result = data.success && data.hasToken;
+            console.log('[DEBUG] Session validation result:', result);
+            return result;
         } catch (error) {
-            // console.error('Session validation failed:', error);
+            console.error('[DEBUG] Session validation failed:', error);
             return false;
         }
     }
@@ -419,21 +435,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load Profiles
     async function loadProfiles() {
+        console.log('[DEBUG] loadProfiles called');
         try {
-            // console.log('Loading profiles with token:', userData.token?.substring(0, 20) + '...');
+            console.log('[DEBUG] Loading profiles...');
 
             // Load chat profiles
+            console.log('[DEBUG] Loading chat profiles...');
             const chatResponse = await makeAuthenticatedRequest(`${API_URL}/chat/profiles`);
 
+            console.log('[DEBUG] Chat profiles response status:', chatResponse.status);
+            
             if (chatResponse.status === 401) {
-                // console.log('Chat profiles request returned 401');
+                console.log('[DEBUG] Chat profiles request returned 401');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
                 return;
             }
 
             const chatData = await chatResponse.json();
-            // console.log('Chat profiles response:', chatData);
+            console.log('[DEBUG] Chat profiles response data:', chatData);
 
             if (chatData.success) {
                 renderChatProfiles(chatData.profiles);
@@ -446,17 +466,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Load mail profiles
+            console.log('[DEBUG] Loading mail profiles...');
             const mailResponse = await makeAuthenticatedRequest(`${API_URL}/mail/profiles`);
 
+            console.log('[DEBUG] Mail profiles response status:', mailResponse.status);
+            
             if (mailResponse.status === 401) {
-                // console.log('Mail profiles request returned 401');
+                console.log('[DEBUG] Mail profiles request returned 401');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
                 return;
             }
 
             const mailData = await mailResponse.json();
-            // console.log('Mail profiles response:', mailData);
+            console.log('[DEBUG] Mail profiles response data:', mailData);
 
             if (mailData.success) {
                 renderMailProfiles(mailData.profiles);
