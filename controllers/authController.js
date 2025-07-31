@@ -156,6 +156,13 @@ router.post('/alpha-login', async (req, res) => {
             }
 
             console.log('Alpha.Date authentication successful for:', email);
+            console.log('Session after save:', {
+                sessionId: req.sessionID,
+                sessionData: req.session,
+                tokenPresent: !!req.session.token,
+                email: req.session.email,
+                operatorId: req.session.operatorId
+            });
 
             return res.json({
                 success: true,
@@ -187,9 +194,52 @@ router.get('/session-check', (req, res) => {
         hasEmail: !!req.session.email,
         sessionData: {
             email: req.session.email || 'not set',
-            tokenPresent: !!req.session.token
+            tokenPresent: !!req.session.token,
+            operatorId: req.session.operatorId || 'not set'
         }
     });
+});
+
+// Test session persistence endpoint
+router.post('/test-session', (req, res) => {
+    const { testValue } = req.body;
+    
+    if (testValue) {
+        req.session.testValue = testValue;
+        req.session.testTimestamp = new Date().toISOString();
+        
+        req.session.save((err) => {
+            if (err) {
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Session save error',
+                    error: err.message 
+                });
+            }
+            
+            res.json({
+                success: true,
+                message: 'Test value saved to session',
+                sessionId: req.sessionID,
+                saved: {
+                    testValue: req.session.testValue,
+                    testTimestamp: req.session.testTimestamp
+                }
+            });
+        });
+    } else {
+        res.json({
+            success: true,
+            message: 'Current session data',
+            sessionId: req.sessionID,
+            data: {
+                testValue: req.session.testValue || 'not set',
+                testTimestamp: req.session.testTimestamp || 'not set',
+                hasToken: !!req.session.token,
+                email: req.session.email || 'not set'
+            }
+        });
+    }
 });
 
 export default router;
