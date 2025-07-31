@@ -11,11 +11,13 @@ async function loginWithExtension(token) {
     try {
         console.log('[CONTENT] Attempting to login with extension');
         console.log('[CONTENT] Current URL:', window.location.href);
+        console.log('[CONTENT] Token length:', token ? token.length : 0);
         
         // Use the current page's origin for the API call
         const apiUrl = `${window.location.origin}/api/auth/login-extension`;
         console.log('[CONTENT] API URL:', apiUrl);
         
+        console.log('[CONTENT] Making fetch request...');
         const response = await fetch(apiUrl, {
             method: 'POST',
             credentials: 'include', // Include cookies for session
@@ -27,6 +29,10 @@ async function loginWithExtension(token) {
                 jwtToken: token
             })
         });
+        
+        console.log('[CONTENT] Fetch request completed');
+        console.log('[CONTENT] Response status:', response.status);
+        console.log('[CONTENT] Response headers:', response.headers);
 
         console.log('[CONTENT] Login response status:', response.status);
         const data = await response.json();

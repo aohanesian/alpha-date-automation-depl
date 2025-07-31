@@ -57,6 +57,7 @@ function showAutomationInterface() {
     
     // Add event listeners
     document.getElementById('login-extension-btn').addEventListener('click', loginWithExtension);
+    document.getElementById('test-connectivity-btn').addEventListener('click', testServerConnectivity);
 }
 
 // Show error interface
@@ -247,6 +248,37 @@ function loginWithExtensionOnPage(token) {
     } catch (error) {
         console.error('[EXTENSION] Error logging in with extension:', error);
         return false;
+    }
+}
+
+// Test server connectivity
+async function testServerConnectivity() {
+    try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const result = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            function: () => {
+                return fetch('/api/auth/extension-test', {
+                    method: 'GET',
+                    credentials: 'include'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('[CONTENT] Extension test response:', data);
+                    return data;
+                })
+                .catch(error => {
+                    console.error('[CONTENT] Extension test error:', error);
+                    return { error: error.message };
+                });
+            }
+        });
+        
+        console.log('[EXTENSION] Test result:', result[0].result);
+        return result[0].result;
+    } catch (error) {
+        console.error('[EXTENSION] Test error:', error);
+        return { error: error.message };
     }
 }
 

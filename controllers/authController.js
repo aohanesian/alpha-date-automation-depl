@@ -360,17 +360,25 @@ router.post('/login-jwt', async (req, res) => {
 
 // Extension Login endpoint
 router.post('/login-extension', async (req, res) => {
+    console.log(`\n=== EXTENSION LOGIN ATTEMPT ===`);
+    console.log(`[DEBUG] Extension login endpoint hit`);
+    console.log(`[DEBUG] Request body:`, req.body);
+    console.log(`[DEBUG] Session ID before login: ${req.sessionID}`);
+    console.log(`[DEBUG] Session exists before login: ${!!req.session}`);
+    console.log(`[DEBUG] Session data before login:`, req.session);
+    
     try {
         const { jwtToken } = req.body;
 
         if (!jwtToken) {
+            console.log(`[DEBUG] No JWT token provided`);
             return res.status(400).json({ 
                 success: false, 
                 message: 'JWT token is required' 
             });
         }
 
-        console.log(`[INFO] Extension login attempt`);
+        console.log(`[INFO] Extension login attempt with token length: ${jwtToken.length}`);
 
         // Step 1: Decode JWT token to extract email
         let decodedEmail;
@@ -495,6 +503,18 @@ router.post('/login-extension', async (req, res) => {
             details: error.message
         });
     }
+});
+
+// Test endpoint for extension debugging
+router.get('/extension-test', (req, res) => {
+    console.log(`[DEBUG] Extension test endpoint hit`);
+    res.json({
+        success: true,
+        message: 'Extension test endpoint working',
+        timestamp: new Date().toISOString(),
+        sessionId: req.sessionID,
+        hasSession: !!req.session
+    });
 });
 
 // Logout endpoint
