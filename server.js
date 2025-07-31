@@ -27,20 +27,22 @@ app.use(cors({
 
         const allowedOrigins = [
             'https://alpha-date-automation-depl.onrender.com',
+            'https://alpha-date-automation-depl-commercial.onrender.com',
             'http://localhost:3000',
             'http://localhost:5173',
             'http://127.0.0.1:3000',
             'http://127.0.0.1:5173',
             'https://www.alpha-bot.date',
             'https://alpha-bot.date',
-            'alpha-date-automation-depl-commercial.onrender.com',
             process.env.VITE_API_URL,
         ];
 
         if (allowedOrigins.indexOf(origin) !== -1) {
+            console.log('CORS allowed origin:', origin);
             callback(null, true);
         } else {
             console.log('CORS blocked origin:', origin);
+            console.log('Allowed origins:', allowedOrigins);
             callback(new Error('Not allowed by CORS'));
         }
     },
