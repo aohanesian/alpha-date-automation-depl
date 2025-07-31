@@ -16,6 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginStatus = document.getElementById('login-status');
     const emailInput = document.getElementById('email');
     const passwordInput = document.getElementById('password');
+    
+
     const chatProfilesContainer = document.getElementById('chat-profiles-container');
     const mailProfilesContainer = document.getElementById('mail-profiles-container');
     const toggleAttachments = document.getElementById('toggle-attachments');
@@ -31,6 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check for stored login on page load
     checkStoredLogin();
+
+
 
     async function checkStoredLogin() {
         // Check if there's a valid server-side session first
@@ -111,7 +115,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Login Handler
-    loginBtn.addEventListener('click', async () => {
+    loginBtn.addEventListener('click', handleCredentialsLogin);
+
+    async function handleCredentialsLogin() {
         const email = emailInput.value.trim();
         const password = passwordInput.value.trim();
 
@@ -188,7 +194,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             loginBtn.disabled = false;
         }
-    });
+    }
+
+
 
     function displayLoginError(message) {
         loginStatus.textContent = message;

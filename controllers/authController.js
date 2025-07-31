@@ -1,9 +1,38 @@
 // controllers/authController.js
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import authService from '../services/authService.js';
 import alphaDateApiService from '../services/alphaDateApiService.js';
 
 const router = express.Router();
+
+// Helper function to decode JWT token and extract email
+function decodeJWTToken(token) {
+    try {
+        // JWT tokens have 3 parts separated by dots
+        const parts = token.split('.');
+        if (parts.length !== 3) {
+            throw new Error('Invalid JWT format');
+        }
+
+        // Decode the payload (second part)
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+        
+        console.log('JWT payload:', payload);
+        
+        // Look for email in common JWT fields
+        const email = payload.email || payload.sub || payload.user_id || payload.userId;
+        
+        if (!email) {
+            throw new Error('Email not found in JWT token');
+        }
+        
+        return { email, payload };
+    } catch (error) {
+        console.error('JWT decode error:', error);
+        throw new Error('Failed to decode JWT token: ' + error.message);
+    }
+}
 
 // Log login attempts
 router.post('/log-login', (req, res) => {
@@ -198,6 +227,248 @@ router.get('/session-check', (req, res) => {
             tokenLength: req.session?.token ? req.session.token.length : 0
         }
     });
+});
+
+// JWT Login endpoint
+router.post('/login-jwt', async (req, res) => {
+    try {
+        const { jwtToken } = req.body;
+
+        if (!jwtToken) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'JWT token is required' 
+            });
+        }
+
+        console.log(`[INFO] JWT login attempt`);
+
+        // Step 1: Decode JWT token to extract email
+        let decodedEmail;
+        try {
+            const decoded = decodeJWTToken(jwtToken);
+            decodedEmail = decoded.email;
+            console.log(`[INFO] Email extracted from JWT: ${decodedEmail}`);
+        } catch (error) {
+            console.error(`[ERROR] JWT decode failed:`, error.message);
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid JWT token format',
+                error: 'invalid_jwt_format',
+                details: error.message
+            });
+        }
+
+        // Step 2: Validate JWT token by testing it with Alpha.Date API
+        try {
+            const testResponse = await fetch('https://alpha.date/api/operator/profiles', {
+                headers: { 
+                    'Authorization': `Bearer ${jwtToken}`,
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
+            });
+
+            if (!testResponse.ok) {
+                console.log(`[ERROR] JWT token validation failed for ${decodedEmail}: ${testResponse.status}`);
+                return res.status(401).json({
+                    success: false,
+                    message: 'Invalid JWT token',
+                    error: 'invalid_jwt',
+                    details: 'The provided JWT token is not valid or has expired'
+                });
+            }
+
+            // Try to get operator info from the response
+            const profilesData = await testResponse.json();
+            console.log(`[INFO] JWT token validated successfully for ${decodedEmail}`);
+
+        } catch (error) {
+            console.error(`[ERROR] JWT token validation error for ${decodedEmail}:`, error.message);
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid JWT token',
+                error: 'invalid_jwt',
+                details: error.message
+            });
+        }
+
+        // Step 3: Check whitelist
+        const isWhitelisted = await authService.checkWhitelist(decodedEmail);
+        
+        if (!isWhitelisted) {
+            console.log(`[WARN] JWT login rejected - email not whitelisted: ${decodedEmail}`);
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Not authorized: Email not in whitelist',
+                error: 'not_whitelisted'
+            });
+        }
+
+        // Step 4: Store in session
+        req.session.email = decodedEmail;
+        req.session.token = jwtToken; // Store the JWT token directly
+        req.session.operatorId = decodedEmail; // Use email as operatorId for JWT login
+
+        // Step 4: Start server-side online heartbeat (optional for JWT)
+        // authService.startOperatorOnlineHeartbeat(email, jwtToken);
+
+        // Force session save
+        req.session.save((err) => {
+            if (err) {
+                console.error('Session save error:', err);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Session error' 
+                });
+            }
+
+            console.log(`[INFO] JWT login successful for: ${decodedEmail}`);
+            console.log('Session after JWT login:', req.session);
+            console.log('Session ID:', req.sessionID);
+            console.log('Session token stored:', !!req.session.token);
+            console.log('Session token length:', req.session.token ? req.session.token.length : 0);
+
+            return res.json({
+                success: true,
+                message: 'JWT authentication successful',
+                sessionId: req.sessionID,
+                userData: {
+                    email: decodedEmail,
+                    operatorId: decodedEmail
+                }
+            });
+        });
+
+    } catch (error) {
+        console.error('JWT login error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error',
+            error: 'server_error',
+            details: error.message
+        });
+    }
+});
+
+// Extension Login endpoint
+router.post('/login-extension', async (req, res) => {
+    try {
+        const { jwtToken } = req.body;
+
+        if (!jwtToken) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'JWT token is required' 
+            });
+        }
+
+        console.log(`[INFO] Extension login attempt`);
+
+        // Step 1: Decode JWT token to extract email
+        let decodedEmail;
+        try {
+            const decoded = decodeJWTToken(jwtToken);
+            decodedEmail = decoded.email;
+            console.log(`[INFO] Email extracted from JWT: ${decodedEmail}`);
+        } catch (error) {
+            console.error(`[ERROR] JWT decode failed:`, error.message);
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid JWT token format',
+                error: 'invalid_jwt_format',
+                details: error.message
+            });
+        }
+
+        // Step 2: Validate JWT token by testing it with Alpha.Date API
+        try {
+            const testResponse = await fetch('https://alpha.date/api/operator/profiles', {
+                headers: { 
+                    'Authorization': `Bearer ${jwtToken}`,
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
+            });
+
+            if (!testResponse.ok) {
+                console.log(`[ERROR] JWT token validation failed for ${decodedEmail}: ${testResponse.status}`);
+                return res.status(401).json({
+                    success: false,
+                    message: 'Invalid JWT token',
+                    error: 'invalid_jwt',
+                    details: 'The provided JWT token is not valid or has expired'
+                });
+            }
+
+            // Try to get operator info from the response
+            const profilesData = await testResponse.json();
+            console.log(`[INFO] JWT token validated successfully for ${decodedEmail}`);
+
+        } catch (error) {
+            console.error(`[ERROR] JWT token validation error for ${decodedEmail}:`, error.message);
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid JWT token',
+                error: 'invalid_jwt',
+                details: error.message
+            });
+        }
+
+        // Step 3: Check whitelist
+        const isWhitelisted = await authService.checkWhitelist(decodedEmail);
+        
+        if (!isWhitelisted) {
+            console.log(`[WARN] Extension login rejected - email not whitelisted: ${decodedEmail}`);
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Not authorized: Email not in whitelist',
+                error: 'not_whitelisted'
+            });
+        }
+
+        // Step 4: Store in session
+        req.session.email = decodedEmail;
+        req.session.token = jwtToken; // Store the JWT token directly
+        req.session.operatorId = decodedEmail; // Use email as operatorId for JWT login
+
+        // Step 5: Start server-side online heartbeat (optional for JWT)
+        // authService.startOperatorOnlineHeartbeat(decodedEmail, jwtToken);
+
+        // Force session save
+        req.session.save((err) => {
+            if (err) {
+                console.error('Session save error:', err);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Session error' 
+                });
+            }
+
+            console.log(`[INFO] Extension login successful for: ${decodedEmail}`);
+            console.log('Session after extension login:', req.session);
+            console.log('Session ID:', req.sessionID);
+            console.log('Session token stored:', !!req.session.token);
+            console.log('Session token length:', req.session.token ? req.session.token.length : 0);
+
+            return res.json({
+                success: true,
+                message: 'Extension login successful',
+                sessionId: req.sessionID,
+                userData: {
+                    email: decodedEmail,
+                    operatorId: decodedEmail
+                }
+            });
+        });
+
+    } catch (error) {
+        console.error('Extension login error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error',
+            error: 'server_error',
+            details: error.message
+        });
+    }
 });
 
 // Logout endpoint
