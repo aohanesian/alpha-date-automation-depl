@@ -499,6 +499,10 @@ const mailService = {
         const controller = abortControllers.get(profileId);
         if (controller) controller.abort();
         processingProfiles.delete(profileId);
+        
+        // Stop profile-specific online heartbeat
+        const operatorId = this.extractOperatorIdFromToken('default') || 'default';
+        authService.stopProfileOnlineHeartbeat(profileId, operatorId);
     },
 
     clearBlocks(profileId) {

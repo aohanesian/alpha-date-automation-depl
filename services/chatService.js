@@ -536,6 +536,10 @@ const chatService = {
         if (controller) controller.abort();
         processingProfiles.delete(profileId);
         this.setProfileStatus(profileId, 'Ready');
+        
+        // Stop profile-specific online heartbeat
+        const operatorId = this.extractOperatorIdFromToken('default') || 'default';
+        authService.stopProfileOnlineHeartbeat(profileId, operatorId);
     },
 
     clearProfileBlockList(profileId) {
