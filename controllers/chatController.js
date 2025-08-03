@@ -30,7 +30,7 @@ function extractToken(req, res, next) {
                 req.token = sessionData.token;
                 req.userEmail = sessionData.email;
                 req.operatorId = sessionData.operatorId;
-                console.log('Token from session store:', req.token);
+                console.log('Token from session store:', req.token, 'OperatorId:', req.operatorId);
                 return next();
             } else {
                 console.log('Session token not found or expired:', sessionToken);
@@ -44,7 +44,8 @@ function extractToken(req, res, next) {
     // Fallback to current session token
     if (req.session && req.session.token) {
         req.token = req.session.token;
-        console.log('Token from current session:', req.token);
+        req.operatorId = req.session.operatorId;
+        console.log('Token from current session:', req.token, 'OperatorId:', req.operatorId);
         return next();
     }
     
@@ -103,7 +104,7 @@ router.post('/start', async (req, res) => {
         }
 
         // Start chat processing in the background (non-blocking)
-        chatService.startProfileProcessing(profileId, messageTemplate, req.token, attachment);
+        chatService.startProfileProcessing(profileId, messageTemplate, req.token, attachment, req.operatorId);
 
         res.json({ success: true, message: 'Processing started' });
     } catch (error) {

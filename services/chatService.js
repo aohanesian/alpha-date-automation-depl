@@ -1,6 +1,7 @@
 // services/chatService.js
 import fetch from 'node-fetch';
 import mailService from './mailService.js';
+import authService from './authService.js';
 
 // In-memory storage for processing state
 const processingProfiles = new Set();
@@ -28,7 +29,7 @@ const chatService = {
         }
     },
 
-    async startProfileProcessing(profileId, messageTemplate, token, attachment = null) {
+    async startProfileProcessing(profileId, messageTemplate, token, attachment = null, operatorId = null) {
         if (processingProfiles.has(profileId)) {
             return;
         }
@@ -39,6 +40,11 @@ const chatService = {
         abortControllers.set(profileId, controller);
         processingProfiles.add(profileId);
         this.setProfileStatus(profileId, 'processing');
+
+        // Start profile-specific online heartbeat
+        // Use provided operatorId or extract from token
+        const finalOperatorId = operatorId || this.extractOperatorIdFromToken(token) || 'default';
+        authService.startProfileOnlineHeartbeat(profileId, finalOperatorId, token);
 
         // Start processing in a non-blocking way
         this.processChatsForProfile(profileId, messageTemplate, token, controller, attachment)
@@ -559,6 +565,18 @@ const chatService = {
     cleanupProcessing(profileId) {
         processingProfiles.delete(profileId);
         abortControllers.delete(profileId);
+        
+        // Stop profile-specific online heartbeat
+        // We need to track the operatorId per profile, but for now use default
+        const operatorId = 'default';
+        authService.stopProfileOnlineHeartbeat(profileId, operatorId);
+    },
+
+    // Helper method to extract operatorId from token (placeholder implementation)
+    extractOperatorIdFromToken(token) {
+        // This is a placeholder - in a real implementation, you might decode the token
+        // or store the operatorId separately. For now, we'll use a default value.
+        return 'default';
     },
 
     // Add this method to reuse mailService's attachment logic for chat

@@ -3,8 +3,10 @@ import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 
-// Store intervals by operatorId
+// Store intervals by operatorId and profileId
 const onlineHeartbeatIntervals = {};
+const profileOnlineIntervals = new Map(); // Track individual profile online status
+const processingProfiles = new Set(); // Track which profiles are currently processing
 
 const authService = {
     async checkWhitelist(email) {
@@ -33,13 +35,40 @@ const authService = {
         }
     },
 
-    async sendOnlineStatus(operatorId, token) {
+    async sendOnlineStatus(operatorId, token, profileId = null) {
         try {
+            // If no profileId provided, use the old behavior for backward compatibility
+            if (!profileId) {
+                const payload = {
+                    external_id: -1,
+                    operator_id: operatorId,
+                    status: 1
+                };
+
+                const response = await fetch('https://alpha.date/api/operator/setProfileOnline', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to send online status: ${response.statusText}`);
+                }
+
+                return true;
+            }
+
+            // New behavior: send online status for specific profile
             const payload = {
-                external_id: -1,
+                external_id: profileId.toString(),
                 operator_id: operatorId,
                 status: 1
             };
+
+            console.log(`[ONLINE STATUS] Sending online status for profile ${profileId}, operator ${operatorId}`);
 
             const response = await fetch('https://alpha.date/api/operator/setProfileOnline', {
                 method: 'POST',
@@ -51,12 +80,13 @@ const authService = {
             });
 
             if (!response.ok) {
-                throw new Error(`Failed to send online status: ${response.statusText}`);
+                throw new Error(`Failed to send online status for profile ${profileId}: ${response.statusText}`);
             }
 
+            console.log(`[ONLINE STATUS] Successfully sent online status for profile ${profileId}`);
             return true;
         } catch (error) {
-            console.error('Online status error:', error);
+            console.error(`[ONLINE STATUS] Error sending online status for profile ${profileId}:`, error);
             throw error;
         }
     },
@@ -80,6 +110,61 @@ const authService = {
             clearInterval(onlineHeartbeatIntervals[operatorId]);
             delete onlineHeartbeatIntervals[operatorId];
         }
+    },
+
+    // New methods for profile-specific online status
+    startProfileOnlineHeartbeat(profileId, operatorId, token) {
+        if (!profileId || !operatorId || !token) return;
+        
+        const intervalKey = `${profileId}-${operatorId}`;
+        
+        // Clear any existing interval for this profile
+        if (profileOnlineIntervals.has(intervalKey)) {
+            clearInterval(profileOnlineIntervals.get(intervalKey));
+        }
+        
+        // Add to processing profiles set
+        processingProfiles.add(profileId);
+        
+        // Immediately send online status
+        this.sendOnlineStatus(operatorId, token, profileId);
+        
+        // Set up periodic heartbeat every 1m50s (110,000 ms)
+        const interval = setInterval(() => {
+            // Only send if profile is still processing
+            if (processingProfiles.has(profileId)) {
+                this.sendOnlineStatus(operatorId, token, profileId);
+            } else {
+                // Stop heartbeat if profile is no longer processing
+                this.stopProfileOnlineHeartbeat(profileId, operatorId);
+            }
+        }, 110000);
+        
+        profileOnlineIntervals.set(intervalKey, interval);
+        console.log(`[ONLINE STATUS] Started online heartbeat for profile ${profileId}, operator ${operatorId}`);
+    },
+
+    stopProfileOnlineHeartbeat(profileId, operatorId) {
+        const intervalKey = `${profileId}-${operatorId}`;
+        
+        if (profileOnlineIntervals.has(intervalKey)) {
+            clearInterval(profileOnlineIntervals.get(intervalKey));
+            profileOnlineIntervals.delete(intervalKey);
+            console.log(`[ONLINE STATUS] Stopped online heartbeat for profile ${profileId}, operator ${operatorId}`);
+        }
+        
+        // Remove from processing profiles set
+        processingProfiles.delete(profileId);
+    },
+
+    // Method to check if a profile is currently processing
+    isProfileProcessing(profileId) {
+        return processingProfiles.has(profileId);
+    },
+
+    // Method to get all currently processing profiles
+    getProcessingProfiles() {
+        return Array.from(processingProfiles);
     },
 
     async authenticateWithAlphaDate(email, password) {
