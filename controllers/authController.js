@@ -145,8 +145,8 @@ router.post('/alpha-login', async (req, res) => {
         req.session.token = authResult.token;
         req.session.operatorId = authResult.operatorId;
 
-        // Step 4: Start server-side online heartbeat
-        authService.startOperatorOnlineHeartbeat(authResult.operatorId || email, authResult.token);
+        // Step 4: Online heartbeat is now handled per-profile when processing starts
+        // No need to start a general operator heartbeat anymore
 
         // Step 5: Force session save and respond
         req.session.save((err) => {

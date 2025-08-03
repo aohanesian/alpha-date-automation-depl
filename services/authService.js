@@ -3,8 +3,7 @@ import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 
-// Store intervals by operatorId and profileId
-const onlineHeartbeatIntervals = {};
+// Store intervals by profileId
 const profileOnlineIntervals = new Map(); // Track individual profile online status
 const processingProfiles = new Set(); // Track which profiles are currently processing
 
@@ -35,33 +34,12 @@ const authService = {
         }
     },
 
-    async sendOnlineStatus(operatorId, token, profileId = null) {
+    async sendOnlineStatus(operatorId, token, profileId) {
         try {
-            // If no profileId provided, use the old behavior for backward compatibility
             if (!profileId) {
-                const payload = {
-                    external_id: -1,
-                    operator_id: operatorId,
-                    status: 1
-                };
-
-                const response = await fetch('https://alpha.date/api/operator/setProfileOnline', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify(payload)
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Failed to send online status: ${response.statusText}`);
-                }
-
-                return true;
+                throw new Error('Profile ID is required for online status');
             }
 
-            // New behavior: send online status for specific profile
             const payload = {
                 external_id: profileId.toString(),
                 operator_id: operatorId,
@@ -91,25 +69,17 @@ const authService = {
         }
     },
 
+    // Legacy method - now deprecated in favor of profile-specific heartbeats
     startOperatorOnlineHeartbeat(operatorId, token) {
-        if (!operatorId || !token) return;
-        // Clear any existing interval for this operator
-        if (onlineHeartbeatIntervals[operatorId]) {
-            clearInterval(onlineHeartbeatIntervals[operatorId]);
-        }
-        // Immediately send online status
-        this.sendOnlineStatus(operatorId, token);
-        // Set up periodic heartbeat every 1m50s (110,000 ms)
-        onlineHeartbeatIntervals[operatorId] = setInterval(() => {
-            this.sendOnlineStatus(operatorId, token);
-        }, 110000);
+        console.warn('[DEPRECATED] startOperatorOnlineHeartbeat is deprecated. Use profile-specific heartbeats instead.');
+        // This method is kept for backward compatibility but does nothing
+        // Profile-specific heartbeats are now handled by startProfileOnlineHeartbeat
     },
 
     stopOperatorOnlineHeartbeat(operatorId) {
-        if (onlineHeartbeatIntervals[operatorId]) {
-            clearInterval(onlineHeartbeatIntervals[operatorId]);
-            delete onlineHeartbeatIntervals[operatorId];
-        }
+        console.warn('[DEPRECATED] stopOperatorOnlineHeartbeat is deprecated. Use profile-specific heartbeats instead.');
+        // This method is kept for backward compatibility but does nothing
+        // Profile-specific heartbeats are now handled by stopProfileOnlineHeartbeat
     },
 
     // New methods for profile-specific online status
