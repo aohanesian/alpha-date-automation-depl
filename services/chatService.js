@@ -134,6 +134,10 @@ const chatService = {
                         // Handle different response types
                         if (result.success) {
                             sent++;
+                            // Increment global statistics
+                            if (global.incrementMessagesSent) {
+                                global.incrementMessagesSent();
+                            }
                         } else if (result.rateLimited) {
                             // Rate limited - wait and continue processing
                             this.setProfileStatus(profileId, 'processing');

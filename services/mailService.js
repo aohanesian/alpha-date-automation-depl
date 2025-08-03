@@ -473,6 +473,11 @@ const mailService = {
                 }
             }
 
+            // Increment global statistics
+            if (global.incrementMailsSent) {
+                global.incrementMailsSent();
+            }
+            
             return { success: true, message_id: mailData.message_id, blocked_ids: blockedExternalIds, blockReasons };
 
         } catch (error) {

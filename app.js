@@ -29,8 +29,35 @@ document.addEventListener('DOMContentLoaded', () => {
         operatorId: ''
     };
 
+    // Statistics update function
+    async function updateStatistics() {
+        try {
+            const response = await fetch(`${API_URL}/statistics`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('messages-count').textContent = data.statistics.totalMessagesSent.toLocaleString();
+                    document.getElementById('mails-count').textContent = data.statistics.totalMailsSent.toLocaleString();
+                }
+            }
+        } catch (error) {
+            console.error('Failed to update statistics:', error);
+        }
+    }
+
+    // Start statistics polling
+    function startStatisticsPolling() {
+        // Update immediately
+        updateStatistics();
+        // Then update every 30 seconds
+        setInterval(updateStatistics, 30000);
+    }
+
     // Check for stored login on page load
     checkStoredLogin();
+    
+    // Start statistics polling
+    startStatisticsPolling();
 
     async function checkStoredLogin() {
         const storedData = localStorage.getItem('alphaAutoData');
