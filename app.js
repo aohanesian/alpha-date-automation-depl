@@ -45,19 +45,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Start statistics polling
-    function startStatisticsPolling() {
-        // Update immediately
-        updateStatistics();
-        // Then update every 30 seconds
-        setInterval(updateStatistics, 30000);
-    }
+    // // Start statistics polling
+    // function startStatisticsPolling() {
+    //     // Update immediately
+    //     updateStatistics();
+    //     // Then update every 30 seconds
+    //     setInterval(updateStatistics, 30000);
+    // }
 
     // Check for stored login on page load
     checkStoredLogin();
     
     // Start statistics polling
-    startStatisticsPolling();
+    // startStatisticsPolling();
 
     async function checkStoredLogin() {
         const storedData = localStorage.getItem('alphaAutoData');
