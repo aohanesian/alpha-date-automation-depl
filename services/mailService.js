@@ -11,18 +11,63 @@ const statusMessages = {};
 const invites = {};
 
 const mailService = {
-    async getProfiles(token) {
+    async getProfiles(token, cfClearance = null) {
         try {
+            const headers = {
+                'Authorization': `Bearer ${token}`,
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                'Sec-CH-UA-Mobile': '?0',
+                'Sec-CH-UA-Platform': '"macOS"',
+                'Referer': 'https://alpha.date/chat',
+                'X-Request-ID': `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`,
+                'Priority': 'u=1, i',
+                'If-None-Match': 'W/"91c-6VUTV2UY9CQJ1xEjB1CN+dzEAMY"',
+                // Additional headers from browser request
+                'Origin': 'https://alpha.date',
+                'Host': 'alpha.date'
+            };
+            
+            // Add cf_clearance cookie if available
+            if (cfClearance) {
+                headers['Cookie'] = `cf_clearance=${cfClearance}`;
+            }
+            
+            console.log('=== MAIL SERVICE - GET PROFILES REQUEST ===');
+            console.log('URL:', 'https://alpha.date/api/operator/profiles');
+            console.log('Token (first 50 chars):', token ? token.substring(0, 50) + '...' : 'null');
+            console.log('cfClearance provided:', !!cfClearance);
+            console.log('cfClearance value:', cfClearance ? cfClearance.substring(0, 50) + '...' : 'null');
+            console.log('All Headers:', JSON.stringify(headers, null, 2));
+            
             const response = await fetch('https://alpha.date/api/operator/profiles', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: headers
             });
 
+            console.log('=== MAIL SERVICE - RESPONSE INFO ===');
+            console.log('Status:', response.status);
+            console.log('Status Text:', response.statusText);
+            console.log('Response Headers:', Object.fromEntries(response.headers.entries()));
+            
             if (!response.ok) {
+                const responseText = await response.text();
+                console.log('Error Response Body:', responseText.substring(0, 500));
                 throw new Error(`Failed to load profiles: ${response.statusText}`);
             }
 
-            return await response.json();
+            const data = await response.json();
+            console.log('=== MAIL SERVICE - SUCCESS ===');
+            console.log('Profiles count:', data.length || 'unknown');
+            return data;
         } catch (error) {
+            console.error('=== MAIL SERVICE - ERROR ===');
             console.error('Profile loading failed:', error);
             throw error;
         }

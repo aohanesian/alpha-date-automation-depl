@@ -122,6 +122,12 @@ textarea {
     border: 1px solid #90CAF9;
 }
 
+.status.info {
+    background: #E1F5FE;
+    color: #0277bd;
+    border: 1px solid #81D4FA;
+}
+
 .split-container {
     display: flex;
     gap: 20px;
@@ -443,6 +449,12 @@ body.dark-mode .status.processing {
     border: 1px solid #1976d2;
 }
 
+body.dark-mode .status.info {
+    background: #0c4a6e;
+    color: #7dd3fc;
+    border: 1px solid #0ea5e9;
+}
+
 body.dark-mode .attachment-item {
     background: #23272a;
     border: 1px solid #333;
@@ -540,4 +552,174 @@ body.dark-mode .attachment-preview.selected {
     outline: 2px solid #90caf9;
     box-shadow: 0 0 0 2px #1976d233;
     background: #1a233a;
+}
+
+/* Login Form Styles */
+.login-form {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.form-group small {
+    display: block;
+    margin-top: 5px;
+    font-size: 12px;
+    color: #666;
+    font-style: italic;
+}
+
+body.dark-mode .form-group small {
+    color: #aaa;
+}
+
+/* Modal Styles */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 10px;
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+    padding: 20px;
+    border-bottom: 1px solid #eee;
+    background: #f8f9fa;
+}
+
+.modal-header h3 {
+    margin: 0 0 10px 0;
+    color: #333;
+}
+
+.modal-header p {
+    margin: 0;
+    color: #666;
+    font-size: 14px;
+}
+
+.modal-body {
+    padding: 20px;
+    background: white;
+}
+
+.modal-footer {
+    padding: 20px;
+    border-top: 1px solid #eee;
+    background: #f8f9fa;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.button.secondary {
+    background: #6c757d;
+}
+
+.button.secondary:hover {
+    background: #5a6268;
+}
+
+/* Dark mode modal styles */
+body.dark-mode .modal-content {
+    background: #2d3748;
+    color: #e2e8f0;
+}
+
+body.dark-mode .modal-header {
+    background: #1a202c;
+    border-bottom-color: #4a5568;
+}
+
+body.dark-mode .modal-header h3 {
+    color: #e2e8f0;
+}
+
+body.dark-mode .modal-header p {
+    color: #a0aec0;
+}
+
+body.dark-mode .modal-body {
+    background: #2d3748;
+}
+
+body.dark-mode .modal-footer {
+    background: #1a202c;
+    border-top-color: #4a5568;
+}
+
+/* Challenge Instructions Styles */
+.challenge-instructions {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.challenge-instructions p {
+    margin: 10px 0;
+    color: #495057;
+    line-height: 1.5;
+}
+
+.challenge-instructions strong {
+    color: #212529;
+}
+
+.challenge-actions {
+    text-align: center;
+    padding: 20px 0;
+}
+
+.challenge-actions .button {
+    font-size: 16px;
+    padding: 12px 24px;
+    margin-bottom: 15px;
+}
+
+/* Dark mode challenge instructions */
+body.dark-mode .challenge-instructions {
+    background: #1a202c;
+}
+
+body.dark-mode .challenge-instructions p {
+    color: #a0aec0;
+}
+
+body.dark-mode .challenge-instructions strong {
+    color: #e2e8f0;
+}
+
+/* Manual Profiles Textarea Styles */
+#profiles-json {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    resize: vertical;
+    min-height: 300px;
+}
+
+body.dark-mode #profiles-json {
+    background: #1a202c;
+    color: #e2e8f0;
+    border-color: #4a5568;
+}
+
+body.dark-mode #profiles-json::placeholder {
+    color: #718096;
 }

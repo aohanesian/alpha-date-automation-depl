@@ -14,12 +14,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const mainContainer = document.getElementById('main-container');
     const loginBtn = document.getElementById('login-btn');
     const loginStatus = document.getElementById('login-status');
-    const emailInput = document.getElementById('email');
-    const passwordInput = document.getElementById('password');
+    const jwtTokenInput = document.getElementById('jwt-token');
+    const cfClearanceInput = document.getElementById('cf-clearance');
+    const profilesJsonInput = document.getElementById('profiles-json');
     const chatProfilesContainer = document.getElementById('chat-profiles-container');
     const mailProfilesContainer = document.getElementById('mail-profiles-container');
     const toggleAttachments = document.getElementById('toggle-attachments');
+    
 
+    
     const API_URL = import.meta.env.VITE_API_URL || window.location.origin + '/api';
 
     // App State
@@ -45,44 +48,120 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // // Start statistics polling
-    // function startStatisticsPolling() {
-    //     // Update immediately
-    //     updateStatistics();
-    //     // Then update every 30 seconds
-    //     setInterval(updateStatistics, 30000);
-    // }
-
     // Check for stored login on page load
     checkStoredLogin();
     
-    // Start statistics polling
-    // startStatisticsPolling();
+    // Single Login Handler
+    loginBtn.addEventListener('click', async () => {
+        const jwtToken = jwtTokenInput.value.trim();
+        const cfClearance = cfClearanceInput.value.trim();
+        const profilesJson = profilesJsonInput.value.trim();
+        
+        if (!jwtToken || !cfClearance || !profilesJson) {
+            displayLoginError('Please fill in all fields: JWT token, cf_clearance cookie, and profiles JSON');
+            return;
+        }
+        
+        loginBtn.disabled = true;
+        loginStatus.textContent = 'Processing login...';
+        loginStatus.className = 'status processing';
+        
+        try {
+            // Parse the profiles JSON
+            const profiles = JSON.parse(profilesJson);
+            
+            if (!Array.isArray(profiles)) {
+                throw new Error('Profiles must be an array');
+            }
+            
+            // Validate profiles structure
+            if (profiles.length === 0) {
+                throw new Error('No profiles found in the JSON');
+            }
+            
+            // Check if profiles have required fields
+            const firstProfile = profiles[0];
+            if (!firstProfile.id || !firstProfile.external_id || !firstProfile.name) {
+                throw new Error('Invalid profile structure. Each profile must have id, external_id, and name fields');
+            }
+            
+            // Create session with JWT and cf_clearance
+            const sessionResponse = await fetch(`${API_URL}/auth/create-session-from-token`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    token: jwtToken,
+                    cfClearance: cfClearance
+                })
+            });
+
+            const sessionData = await sessionResponse.json();
+
+            if (sessionData.success) {
+                // Store profiles in localStorage
+                localStorage.setItem('alphaAutoProfiles', JSON.stringify(profiles));
+                
+                // Create userData with session token and profiles
+                userData = {
+                    email: 'jwt-login@alpha.date',
+                    token: jwtToken,
+                    operatorId: sessionData.userData.operatorId,
+                    sessionToken: sessionData.sessionToken,
+                    profiles: profiles
+                };
+                
+                // Store user data
+                localStorage.setItem('alphaAutoData', JSON.stringify(userData));
+                
+                // Switch to main interface
+                loginForm.style.display = 'none';
+                mainContainer.style.display = 'block';
+                
+                // Load profiles into the interface
+                await loadProfiles();
+                
+                loginStatus.textContent = `Login successful! Loaded ${profiles.length} profiles.`;
+                loginStatus.className = 'status success';
+            } else {
+                displayLoginError(sessionData.message || 'Failed to create session');
+            }
+            
+        } catch (error) {
+            console.error('Login error:', error);
+            displayLoginError(`Error: ${error.message}`);
+        } finally {
+            loginBtn.disabled = false;
+        }
+    });
 
     async function checkStoredLogin() {
         const storedData = localStorage.getItem('alphaAutoData');
         if (storedData) {
             try {
                 userData = JSON.parse(storedData);
-                emailInput.value = userData.email;
-
-                // Try to validate the stored session
-                loginStatus.textContent = 'Checking stored session...';
-                loginStatus.className = 'status processing';
-
+                
+                // Check if we have profiles data
+                if (userData.profiles) {
+                    // We have profiles - switch to main interface
+                    loginForm.style.display = 'none';
+                    mainContainer.style.display = 'block';
+                    await loadProfiles();
+                    return;
+                }
+                
+                // For JWT login methods, validate session
                 const isValid = await validateSession();
                 if (isValid) {
                     // Session is valid, switch to main interface
                     loginForm.style.display = 'none';
                     mainContainer.style.display = 'block';
                     await loadProfiles();
-                    loginStatus.textContent = 'Session restored successfully!';
-                    loginStatus.className = 'status success';
                 } else {
                     // Session is invalid, clear stored data
                     localStorage.removeItem('alphaAutoData');
-                    loginStatus.textContent = 'Session expired, please login again';
-                    loginStatus.className = 'status error';
                 }
             } catch (error) {
                 console.error('Failed to parse stored data:', error);
@@ -96,8 +175,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const userData = JSON.parse(localStorage.getItem('alphaAutoData') || '{}');
         const sessionToken = userData.sessionToken;
 
+        console.log('=== FRONTEND - AUTHENTICATED REQUEST ===');
+        console.log('URL:', url);
+        console.log('Session token from localStorage:', sessionToken ? sessionToken.substring(0, 20) + '...' : 'null');
+
         const defaultOptions = {
-            credentials: 'include', // Include session cookies as fallback
+            // Don't include credentials since we're using session token approach
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
@@ -119,8 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
-        // console.log('Making authenticated request to:', url, 'with session token:', sessionToken);
-
+        console.log('Final headers:', mergedOptions.headers);
         return fetch(url, mergedOptions);
     }
 
@@ -143,87 +225,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Login Handler
-    loginBtn.addEventListener('click', async () => {
-        const email = emailInput.value.trim();
-        const password = passwordInput.value.trim();
 
-        if (!email || !password) {
-            displayLoginError('Please fill in email and password');
-            return;
-        }
-
-        loginBtn.disabled = true;
-        loginStatus.textContent = 'Checking credentials...';
-        loginStatus.className = 'status processing';
-
-        try {
-            // Log the login attempt
-            await fetch(`${API_URL}/auth/log-login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ email, password })
-            });
-
-            // Use new backend authentication endpoint
-            const authResponse = await fetch(`${API_URL}/auth/alpha-login`, {
-                method: 'POST',
-                credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    email: email,
-                    password: password
-                })
-            });
-
-            const authData = await authResponse.json();
-
-            if (authData.success) {
-                // Extract user data from response
-                userData = {
-                    email: email,
-                    token: 'session-based', // Token is now managed in session
-                    operatorId: authData.userData.operatorId,
-                    sessionToken: authData.sessionToken // Store session token for API requests
-                };
-
-                // Store user data
-                localStorage.setItem('alphaAutoData', JSON.stringify(userData));
-
-                // Switch to main interface
-                loginForm.style.display = 'none';
-                mainContainer.style.display = 'block';
-
-                // Load profiles data
-                await loadProfiles();
-
-                loginStatus.textContent = 'Login successful!';
-                loginStatus.className = 'status success';
-            } else {
-                // Handle different error types
-                if (authData.error === 'cloudflare_challenge') {
-                    displayCloudflareError(authData);
-                } else {
-                    displayLoginError(authData.message || 'Authentication failed');
-                }
-            }
-        } catch (error) {
-            console.error('Login error:', error);
-            displayLoginError(`Error: ${error.message}`);
-        } finally {
-            loginBtn.disabled = false;
-        }
-    });
-
+    
+    // Function to display login error
     function displayLoginError(message) {
         loginStatus.textContent = message;
         loginStatus.className = 'status error';
     }
+
+
 
     function displayCloudflareError(authData) {
         loginStatus.innerHTML = `
@@ -247,6 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         loginStatus.className = 'status error';
     }
+
 
     // Render Logout, STOP ALL, and Theme Toggle buttons in the top right
     function renderTopRightButtons() {
@@ -451,43 +462,42 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load Profiles
     async function loadProfiles() {
         try {
-            // console.log('Loading profiles with token:', userData.token?.substring(0, 20) + '...');
+            // Use profiles from userData (loaded from textarea)
+            if (userData.profiles) {
+                renderChatProfiles(userData.profiles);
+                renderMailProfiles(userData.profiles);
+                addLogoutButton();
+                return;
+            }
 
+            // Fallback to API calls if no profiles in userData
             // Load chat profiles
             const chatResponse = await makeAuthenticatedRequest(`${API_URL}/chat/profiles`);
 
             if (chatResponse.status === 401) {
-                // console.log('Chat profiles request returned 401');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
                 return;
             }
 
             const chatData = await chatResponse.json();
-            // console.log('Chat profiles response:', chatData);
 
             if (chatData.success) {
                 renderChatProfiles(chatData.profiles);
             } else {
                 console.error('Failed to load chat profiles:', chatData.message);
-                // If it's an auth error, show debug info
-                if (chatData.debug) {
-                    // console.log('Debug info:', chatData.debug);
-                }
             }
 
             // Load mail profiles
             const mailResponse = await makeAuthenticatedRequest(`${API_URL}/mail/profiles`);
 
             if (mailResponse.status === 401) {
-                // console.log('Mail profiles request returned 401');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
                 return;
             }
 
             const mailData = await mailResponse.json();
-            // console.log('Mail profiles response:', mailData);
 
             if (mailData.success) {
                 renderMailProfiles(mailData.profiles);
@@ -501,7 +511,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Failed to load profiles:', error);
             // If network error, might be session issue
             if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                // console.log('Network error detected, clearing stored data');
                 localStorage.removeItem('alphaAutoData');
                 location.reload();
             }

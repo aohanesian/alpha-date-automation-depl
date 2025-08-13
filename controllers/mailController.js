@@ -30,7 +30,9 @@ function extractToken(req, res, next) {
                 req.token = sessionData.token;
                 req.userEmail = sessionData.email;
                 req.operatorId = sessionData.operatorId;
+                req.cfClearance = sessionData.cfClearance; // Store cfClearance from the session
                 console.log('Token from session store:', req.token, 'OperatorId:', req.operatorId);
+                console.log('cfClearance from session store:', req.cfClearance ? 'present' : 'missing');
                 return next();
             } else {
                 console.log('Session token not found or expired:', sessionToken);
@@ -75,7 +77,18 @@ router.get('/profiles', async (req, res) => {
             });
         }
 
-        const profiles = await mailService.getProfiles(req.token);
+        console.log('=== MAIL CONTROLLER - GET PROFILES ===');
+        console.log('Session ID:', req.sessionID);
+        console.log('Session cfClearance:', req.session?.cfClearance ? 'present' : 'missing');
+        console.log('Session cfClearance value:', req.session?.cfClearance ? req.session.cfClearance.substring(0, 50) + '...' : 'null');
+        console.log('Token present:', !!req.token);
+        console.log('Operator ID:', req.operatorId);
+        console.log('cfClearance from session store:', req.cfClearance ? 'present' : 'missing');
+        console.log('cfClearance value from session store:', req.cfClearance ? req.cfClearance.substring(0, 50) + '...' : 'null');
+        
+        // Use cfClearance from session store if available, otherwise fall back to current session
+        const cfClearance = req.cfClearance || req.session?.cfClearance;
+        const profiles = await mailService.getProfiles(req.token, cfClearance);
         res.json({ success: true, profiles });
     } catch (error) {
         console.error('Get mail profiles error:', error);
