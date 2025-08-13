@@ -27,11 +27,10 @@ const chatService = {
                 'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
                 'Sec-CH-UA-Mobile': '?0',
                 'Sec-CH-UA-Platform': '"macOS"',
-                'Referer': 'https://alpha.date/chat',
-                'X-Request-ID': `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`,
+                'Referer': 'https://alpha.date/chance',
                 'Priority': 'u=1, i',
-                'If-None-Match': 'W/"91c-6VUTV2UY9CQJ1xEjB1CN+dzEAMY"',
-                // Additional headers from browser request
+                'If-None-Match': 'W/"1023-mcdlNvAI+sUhnrLlY5DhWG5ONco"',
+                'X-Request-ID': `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`,
                 'Origin': 'https://alpha.date',
                 'Host': 'alpha.date'
             };
@@ -39,6 +38,9 @@ const chatService = {
             // Add cf_clearance cookie if available
             if (cfClearance) {
                 headers['Cookie'] = `cf_clearance=${cfClearance}`;
+                console.log('[DEBUG] Adding cf_clearance cookie to getProfiles request');
+            } else {
+                console.log('[DEBUG] No cf_clearance cookie available for getProfiles request');
             }
             
             console.log('=== CHAT SERVICE - GET PROFILES REQUEST ===');
@@ -74,7 +76,7 @@ const chatService = {
         }
     },
 
-    async startProfileProcessing(profileId, messageTemplate, token, attachment = null, operatorId = null) {
+    async startProfileProcessing(profileId, messageTemplate, token, attachment = null, operatorId = null, cfClearance = null) {
         if (processingProfiles.has(profileId)) {
             return;
         }
@@ -89,10 +91,10 @@ const chatService = {
         // Start profile-specific online heartbeat
         // Use provided operatorId or extract from token
         const finalOperatorId = operatorId || this.extractOperatorIdFromToken(token) || 'default';
-        authService.startProfileOnlineHeartbeat(profileId, finalOperatorId, token);
+        authService.startProfileOnlineHeartbeat(profileId, finalOperatorId, token, cfClearance);
 
         // Start processing in a non-blocking way
-        this.processChatsForProfile(profileId, messageTemplate, token, controller, attachment)
+        this.processChatsForProfile(profileId, messageTemplate, token, controller, attachment, cfClearance)
             .catch(error => {
                 console.error(`Chat processing error for profile ${profileId}:`, error);
                 this.setProfileStatus(profileId, `Error: ${error.message}`);
@@ -100,7 +102,7 @@ const chatService = {
             });
     },
 
-    async processChatsForProfile(profileId, messageTemplate, token, controller, attachment = null) {
+    async processChatsForProfile(profileId, messageTemplate, token, controller, attachment = null, cfClearance = null) {
         try {
             while (true) {
                 if (controller.signal.aborted) {
@@ -110,7 +112,7 @@ const chatService = {
 
                 // First, fetch all available chats from all pages
                 this.setProfileStatus(profileId, 'processing');
-                const allChats = await this.fetchAllChanceChats(profileId, token, controller.signal);
+                const allChats = await this.fetchAllChanceChats(profileId, token, controller.signal, cfClearance);
 
                 if (controller.signal.aborted) break;
 
@@ -138,7 +140,7 @@ const chatService = {
 
                 // --- Batch fetch last messages ---
                 const chatUids = availableChats.map(chat => chat.chat_uid);
-                const lastMessagesMap = await this.fetchLastMessages(chatUids, token);
+                const lastMessagesMap = await this.fetchLastMessages(chatUids, token, cfClearance);
 
                 let sent = 0;
                 let skipped = 0;
@@ -168,13 +170,13 @@ const chatService = {
                     try {
                         // If attachment is provided, send it first
                         if (attachment) {
-                            const attachmentResult = await this.sendAttachmentMessage(profileId, recipientId, attachment, token);
+                            const attachmentResult = await this.sendAttachmentMessage(profileId, recipientId, attachment, token, cfClearance);
                             if (!attachmentResult.success) {
                                 skipped++;
                                 continue;
                             }
                         }
-                        const result = await this.sendFollowUpMessage(profileId, recipientId, messageTemplate, token);
+                        const result = await this.sendFollowUpMessage(profileId, recipientId, messageTemplate, token, cfClearance);
 
                         // Handle different response types
                         if (result.success) {
@@ -218,7 +220,7 @@ const chatService = {
         }
     },
 
-    async fetchAllChanceChats(profileId, token, signal) {
+    async fetchAllChanceChats(profileId, token, signal, cfClearance = null) {
         const allChats = [];
         let page = 1;
 
@@ -232,20 +234,57 @@ const chatService = {
 
                 let response;
                 try {
+                    const headers = {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                        'Accept': 'application/json, text/plain, */*',
+                        'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+                        'Accept-Encoding': 'gzip, deflate, br, zstd',
+                        'Connection': 'keep-alive',
+                        'Sec-Fetch-Dest': 'empty',
+                        'Sec-Fetch-Mode': 'cors',
+                        'Sec-Fetch-Site': 'same-origin',
+                        'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                        'Sec-CH-UA-Mobile': '?0',
+                        'Sec-CH-UA-Platform': '"macOS"',
+                        'Referer': 'https://alpha.date/chance',
+                        'Origin': 'https://alpha.date',
+                        'Host': 'alpha.date',
+                        'Priority': 'u=1, i',
+                        'X-Request-ID': `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`
+                    };
+                    
+                    // Add cf_clearance cookie if available
+                    if (cfClearance) {
+                        headers['Cookie'] = `cf_clearance=${cfClearance}`;
+                        console.log('[DEBUG] Adding cf_clearance cookie to fetchAllChanceChats request');
+                    } else {
+                        console.log('[DEBUG] No cf_clearance cookie available for fetchAllChanceChats request');
+                    }
+                    
+                    console.log('\n=== CHAT REQUEST DEBUG ===');
+                    console.log('Request URL: https://alpha.date/api/chatList/chatListByUserID');
+                    console.log('Request method: POST');
+                    console.log('Request body:', JSON.stringify({
+                        user_id: profileId,
+                        chat_uid: false,
+                        page: page,
+                        freeze: true,
+                        limits: 1,
+                        ONLINE_STATUS: 1,
+                        SEARCH: "",
+                        CHAT_TYPE: "CHANCE"
+                    }, null, 2));
+                    console.log('Request headers:');
+                    Object.entries(headers).forEach(([key, value]) => {
+                        console.log(`${key}: ${value}`);
+                    });
+                    console.log('=== END CHAT REQUEST DEBUG ===\n');
+                    
                     response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
                         method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json',
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                            'Accept': 'application/json, text/plain, */*',
-                            'Accept-Language': 'en-US,en;q=0.9',
-                            'Accept-Encoding': 'gzip, deflate, br',
-                            'Connection': 'keep-alive',
-                            'Sec-Fetch-Dest': 'empty',
-                            'Sec-Fetch-Mode': 'cors',
-                            'Sec-Fetch-Site': 'same-origin'
-                        },
+                        headers: headers,
                         body: JSON.stringify({
                             user_id: profileId,
                             chat_uid: false,
@@ -258,6 +297,15 @@ const chatService = {
                         }),
                         signal
                     });
+                    
+                    console.log('\n=== CHAT RESPONSE DEBUG ===');
+                    console.log('Response status:', response.status);
+                    console.log('Response status text:', response.statusText);
+                    console.log('Response headers:');
+                    response.headers.forEach((value, key) => {
+                        console.log(`${key}: ${value}`);
+                    });
+                    console.log('=== END CHAT RESPONSE DEBUG ===\n');
                 } catch (err) {
                     // Network or timeout error (e.g., 524)
                     console.error(`Network error or timeout fetching chats for profile ${profileId}:`, err);
@@ -333,33 +381,52 @@ const chatService = {
     },
 
     // Batch fetch last messages for all chatUids
-    async fetchLastMessages(chatUids, token) {
+    async fetchLastMessages(chatUids, token, cfClearance = null) {
         console.log('[fetchLastMessages called]');
         if (!Array.isArray(chatUids) || chatUids.length === 0) return {};
         try {
             let response;
             try {
+                const headers = {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                    'Accept': 'application/json, text/plain, */*',
+                    'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+                    'Accept-Encoding': 'gzip, deflate, br, zstd',
+                    'Connection': 'keep-alive',
+                    'Sec-Fetch-Dest': 'empty',
+                    'Sec-Fetch-Mode': 'cors',
+                    'Sec-Fetch-Site': 'same-origin',
+                    'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                    'Sec-CH-UA-Mobile': '?0',
+                    'Sec-CH-UA-Platform': '"macOS"',
+                    'Referer': 'https://alpha.date/chance',
+                    'Origin': 'https://alpha.date',
+                    'Host': 'alpha.date',
+                    'X-Request-ID': `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`
+                };
+                
+                // Add cf_clearance cookie if available
+                if (cfClearance) {
+                    headers['Cookie'] = `cf_clearance=${cfClearance}`;
+                    console.log('[DEBUG] Adding cf_clearance cookie to fetchLastMessages request');
+                } else {
+                    console.log('[DEBUG] No cf_clearance cookie available for fetchLastMessages request');
+                }
+                
                 response = await fetch('https://alpha.date/api/chatList/lastMessage', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'application/json, text/plain, */*',
-                        'Accept-Language': 'en-US,en;q=0.9',
-                        'Accept-Encoding': 'gzip, deflate, br',
-                        'Connection': 'keep-alive',
-                        'Sec-Fetch-Dest': 'empty',
-                        'Sec-Fetch-Mode': 'cors',
-                        'Sec-Fetch-Site': 'same-origin'
-                    },
-                    body: JSON.stringify({ chat_uid: chatUids })
+                    headers: headers,
+                    body: JSON.stringify({ 
+                        chat_uid: chatUids
+                    })
                 });
             } catch (err) {
                 // Network or timeout error (e.g., 524)
                 console.error('Network error or timeout in fetchLastMessages:', err);
                 await this.delay(50000);
-                return await this.fetchLastMessages(chatUids, token); // retry
+                return await this.fetchLastMessages(chatUids, token, cfClearance); // retry
             }
 
             if (response.status === 401) {
@@ -370,7 +437,7 @@ const chatService = {
             if (response.status === 524) {
                 console.error('524 Timeout in fetchLastMessages. Waiting and retrying...');
                 await this.delay(50000);
-                return await this.fetchLastMessages(chatUids, token); // retry
+                return await this.fetchLastMessages(chatUids, token, cfClearance); // retry
             }
 
             if (!response.ok) throw new Error('Failed to fetch last messages');
@@ -387,7 +454,7 @@ const chatService = {
         }
     },
 
-    async sendAttachmentMessage(senderId, recipientId, attachment, token) {
+    async sendAttachmentMessage(senderId, recipientId, attachment, token, cfClearance = null) {
         console.log('[ATTACHMENT: ]: ', attachment)
         // Determine message_type and content based on attachment type
         let message_type = '';
@@ -416,20 +483,40 @@ const chatService = {
         };
 
         try {
+            const headers = {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                'Sec-CH-UA-Mobile': '?0',
+                'Sec-CH-UA-Platform': '"macOS"',
+                'Referer': 'https://alpha.date/chat',
+                'Origin': 'https://alpha.date',
+                'Host': 'alpha.date'
+            };
+            
+            // Add cf_clearance cookie if available
+            if (cfClearance) {
+                headers['Cookie'] = `cf_clearance=${cfClearance}`;
+                console.log('[DEBUG] Adding cf_clearance cookie to sendAttachmentMessage request');
+            } else {
+                console.log('[DEBUG] No cf_clearance cookie available for sendAttachmentMessage request');
+            }
+            
+            // Update referrer for message sending
+            headers['Referer'] = 'https://alpha.date/chance';
+            headers['X-Request-ID'] = `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`;
+            
             const response = await fetch('https://alpha.date/api/chat/message', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'application/json, text/plain, */*',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Connection': 'keep-alive',
-                    'Sec-Fetch-Dest': 'empty',
-                    'Sec-Fetch-Mode': 'cors',
-                    'Sec-Fetch-Site': 'same-origin'
-                },
+                headers: headers,
                 body: JSON.stringify(payload)
             });
 
@@ -443,7 +530,7 @@ const chatService = {
                 // Rate limited - wait and retry
                 console.error('429 Rate limited in sendAttachmentMessage. Waiting and retrying...');
                 await this.delay(50000);
-                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token);
+                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token, cfClearance);
             }
 
             if (response.status === 401) {
@@ -469,7 +556,7 @@ const chatService = {
                 // Timeout - wait and retry
                 console.error('524 Timeout in sendAttachmentMessage. Waiting and retrying...');
                 await this.delay(50000);
-                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token);
+                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token, cfClearance);
             }
 
             if (!response.ok) {
@@ -502,27 +589,47 @@ const chatService = {
         }
     },
 
-    async sendFollowUpMessage(senderId, recipientId, messageContent, token) {
+    async sendFollowUpMessage(senderId, recipientId, messageContent, token, cfClearance = null) {
 
         console.log('[sendFollowUpMessage] CALLED MSG CONTET:', messageContent)
 
         if (!messageContent) return { success: true };
 
         try {
+            const headers = {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                'Sec-CH-UA-Mobile': '?0',
+                'Sec-CH-UA-Platform': '"macOS"',
+                'Referer': 'https://alpha.date/chat',
+                'Origin': 'https://alpha.date',
+                'Host': 'alpha.date'
+            };
+            
+            // Add cf_clearance cookie if available
+            if (cfClearance) {
+                headers['Cookie'] = `cf_clearance=${cfClearance}`;
+                console.log('[DEBUG] Adding cf_clearance cookie to sendFollowUpMessage request');
+            } else {
+                console.log('[DEBUG] No cf_clearance cookie available for sendFollowUpMessage request');
+            }
+            
+            // Update referrer for message sending
+            headers['Referer'] = 'https://alpha.date/chance';
+            headers['X-Request-ID'] = `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`;
+            
             const response = await fetch('https://alpha.date/api/chat/message', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'application/json, text/plain, */*',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Connection': 'keep-alive',
-                    'Sec-Fetch-Dest': 'empty',
-                    'Sec-Fetch-Mode': 'cors',
-                    'Sec-Fetch-Site': 'same-origin'
-                },
+                headers: headers,
                 body: JSON.stringify({
                     sender_id: +senderId,
                     recipient_id: recipientId,
@@ -542,7 +649,7 @@ const chatService = {
                 // Rate limited - wait and retry
                 console.error('429 Rate limited in sendFollowUpMessage. Waiting and retrying...');
                 await this.delay(50000);
-                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token);
+                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token, cfClearance);
             }
 
             if (response.status === 401) {
@@ -568,7 +675,7 @@ const chatService = {
                 // Timeout - wait and retry
                 console.error('524 Timeout in sendFollowUpMessage. Waiting and retrying...');
                 await this.delay(50000);
-                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token);
+                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token, cfClearance);
             }
 
             if (!response.ok) {

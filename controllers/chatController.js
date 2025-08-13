@@ -117,7 +117,9 @@ router.post('/start', async (req, res) => {
         }
 
         // Start chat processing in the background (non-blocking)
-        chatService.startProfileProcessing(profileId, messageTemplate, req.token, attachment, req.operatorId);
+        // Use cfClearance from session store if available, otherwise fall back to current session
+        const cfClearance = req.cfClearance || req.session?.cfClearance;
+        chatService.startProfileProcessing(profileId, messageTemplate, req.token, attachment, req.operatorId, cfClearance);
 
         res.json({ success: true, message: 'Processing started' });
     } catch (error) {

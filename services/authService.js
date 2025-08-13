@@ -34,34 +34,15 @@ const authService = {
         }
     },
 
-    async sendOnlineStatus(operatorId, token, profileId) {
+    async sendOnlineStatus(operatorId, token, profileId, cfClearance = null) {
         try {
             if (!profileId) {
                 throw new Error('Profile ID is required for online status');
             }
 
-            const payload = {
-                external_id: profileId.toString(),
-                operator_id: operatorId,
-                status: 1
-            };
-
-            console.log(`[ONLINE STATUS] Sending online status for profile ${profileId}, operator ${operatorId}`);
-
-            const response = await fetch('https://alpha.date/api/operator/setProfileOnline', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                throw new Error(`Failed to send online status for profile ${profileId}: ${response.statusText}`);
-            }
-
-            console.log(`[ONLINE STATUS] Successfully sent online status for profile ${profileId}`);
+            // TEMPORARILY DISABLE ONLINE STATUS TO AVOID CLOUDFLARE ISSUES
+            console.log(`[ONLINE STATUS] Online status temporarily disabled for profile ${profileId}, operator ${operatorId}`);
+            console.log(`[ONLINE STATUS] This feature will be re-enabled once we resolve the cross-origin Cloudflare protection`);
             return true;
         } catch (error) {
             console.error(`[ONLINE STATUS] Error sending online status for profile ${profileId}:`, error);
@@ -83,7 +64,7 @@ const authService = {
     },
 
     // New methods for profile-specific online status
-    startProfileOnlineHeartbeat(profileId, operatorId, token) {
+    startProfileOnlineHeartbeat(profileId, operatorId, token, cfClearance = null) {
         if (!profileId || !operatorId || !token) return;
         
         const intervalKey = `${profileId}-${operatorId}`;
@@ -96,14 +77,21 @@ const authService = {
         // Add to processing profiles set
         processingProfiles.add(profileId);
         
+        // Store cfClearance for this profile's heartbeat
+        if (cfClearance) {
+            profileOnlineIntervals.set(`${intervalKey}-cf`, cfClearance);
+        }
+        
         // Immediately send online status
-        this.sendOnlineStatus(operatorId, token, profileId);
+        this.sendOnlineStatus(operatorId, token, profileId, cfClearance);
         
         // Set up periodic heartbeat every 1m50s (110,000 ms)
         const interval = setInterval(() => {
             // Only send if profile is still processing
             if (processingProfiles.has(profileId)) {
-                this.sendOnlineStatus(operatorId, token, profileId);
+                // Get stored cfClearance for this profile
+                const storedCfClearance = profileOnlineIntervals.get(`${intervalKey}-cf`);
+                this.sendOnlineStatus(operatorId, token, profileId, storedCfClearance);
             } else {
                 // Stop heartbeat if profile is no longer processing
                 this.stopProfileOnlineHeartbeat(profileId, operatorId);
@@ -120,6 +108,8 @@ const authService = {
         if (profileOnlineIntervals.has(intervalKey)) {
             clearInterval(profileOnlineIntervals.get(intervalKey));
             profileOnlineIntervals.delete(intervalKey);
+            // Clean up stored cfClearance
+            profileOnlineIntervals.delete(`${intervalKey}-cf`);
             console.log(`[ONLINE STATUS] Stopped online heartbeat for profile ${profileId}, operator ${operatorId}`);
         }
         
@@ -145,14 +135,20 @@ const authService = {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
                     'Accept': 'application/json, text/plain, */*',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+                    'Accept-Encoding': 'gzip, deflate, br, zstd',
                     'Connection': 'keep-alive',
                     'Sec-Fetch-Dest': 'empty',
                     'Sec-Fetch-Mode': 'cors',
-                    'Sec-Fetch-Site': 'same-origin'
+                    'Sec-Fetch-Site': 'same-origin',
+                    'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                    'Sec-CH-UA-Mobile': '?0',
+                    'Sec-CH-UA-Platform': '"macOS"',
+                    'Referer': 'https://alpha.date/login',
+                    'Origin': 'https://alpha.date',
+                    'Host': 'alpha.date'
                 },
                 body: JSON.stringify({
                     email: email,
