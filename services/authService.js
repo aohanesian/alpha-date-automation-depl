@@ -185,9 +185,26 @@ const authService = {
         try {
             console.log('[INFO] Attempting to authenticate with Alpha.Date using Puppeteer with stealth plugin');
             
+            // Check if we're in production and if Puppeteer is available
+            if (process.env.NODE_ENV === 'production') {
+                try {
+                    // Test if Puppeteer can launch at all
+                    const testBrowser = await puppeteer.launch({
+                        headless: 'new',
+                        args: ['--no-sandbox', '--disable-setuid-sandbox']
+                    });
+                    await testBrowser.close();
+                    console.log('[INFO] Puppeteer test launch successful');
+                } catch (testError) {
+                    console.error('[ERROR] Puppeteer test launch failed:', testError.message);
+                    console.log('[INFO] Skipping Puppeteer authentication, using API method directly');
+                    return await this.authenticateWithAPI(email, password);
+                }
+            }
+            
             // Launch browser with stealth settings
-            browser = await puppeteer.launch({
-                headless: false, // Avoid headless mode to reduce bot detection
+            const launchOptions = {
+                headless: process.env.NODE_ENV === 'production' ? 'new' : false, // Use headless in production
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -198,9 +215,42 @@ const authService = {
                     '--disable-gpu',
                     '--disable-background-timer-throttling',
                     '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding'
+                    '--disable-renderer-backgrounding',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor'
                 ]
-            });
+            };
+
+            // In production, we need to specify the executable path
+            if (process.env.NODE_ENV === 'production') {
+                // Try multiple possible Chrome paths
+                const possiblePaths = [
+                    process.env.PUPPETEER_EXECUTABLE_PATH,
+                    '/opt/render/.cache/puppeteer/chrome-linux/chrome',
+                    '/usr/bin/google-chrome-stable',
+                    '/usr/bin/chromium-browser',
+                    '/usr/bin/chromium'
+                ].filter(Boolean);
+                
+                for (const path of possiblePaths) {
+                    try {
+                        const fs = await import('fs');
+                        if (fs.existsSync(path)) {
+                            launchOptions.executablePath = path;
+                            console.log(`[INFO] Using Chrome executable: ${path}`);
+                            break;
+                        }
+                    } catch (err) {
+                        console.log(`[INFO] Chrome not found at: ${path}`);
+                    }
+                }
+                
+                if (!launchOptions.executablePath) {
+                    console.log('[WARN] Chrome executable not found, letting Puppeteer auto-detect');
+                }
+            }
+
+            browser = await puppeteer.launch(launchOptions);
 
             const page = await browser.newPage();
 

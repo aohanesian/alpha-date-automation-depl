@@ -12,7 +12,8 @@
     "start": "node server.js",
     "server:dev": "nodemon server.js",
     "test:captcha": "node test-captcha.js",
-    "test:captcha:manual": "node test-captcha.js --manual"
+    "test:captcha:manual": "node test-captcha.js --manual",
+    "debug:chrome": "node -e \"const puppeteer = require('puppeteer'); console.log('Puppeteer version:', require('puppeteer/package.json').version); console.log('Chrome paths:', puppeteer.executablePath());\""
   },
   "dependencies": {
     "body-parser": "^1.20.2",
