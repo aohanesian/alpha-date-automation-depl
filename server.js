@@ -245,9 +245,9 @@ app.get('/api/health', (req, res) => {
 });
 
 // Debug screenshots endpoint
-app.get('/api/debug-screenshots', (req, res) => {
+app.get('/api/debug-screenshots', async (req, res) => {
     try {
-        const { readdirSync } = require('fs');
+        const { readdirSync } = await import('fs');
         const screenshots = readdirSync('/opt/render/project/src/debug-screenshots/')
             .filter(file => file.endsWith('.png'))
             .map(file => ({
@@ -271,14 +271,22 @@ app.get('/api/debug-screenshots', (req, res) => {
     }
 });
 
-// Serve individual screenshot files
+// Serve individual screenshot and HTML files
 app.get('/api/debug-screenshots/:filename', (req, res) => {
     try {
         const filename = req.params.filename;
         const filepath = `/opt/render/project/src/debug-screenshots/${filename}`;
+        
+        // Set appropriate content type
+        if (filename.endsWith('.html')) {
+            res.setHeader('Content-Type', 'text/html');
+        } else if (filename.endsWith('.png')) {
+            res.setHeader('Content-Type', 'image/png');
+        }
+        
         res.sendFile(filepath);
     } catch (error) {
-        res.status(404).json({ error: 'Screenshot not found' });
+        res.status(404).json({ error: 'File not found' });
     }
 });
 
