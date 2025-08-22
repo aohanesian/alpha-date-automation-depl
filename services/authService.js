@@ -213,8 +213,7 @@ const authService = {
                     '/usr/bin/google-chrome-stable',
                     '/usr/bin/google-chrome',
                     '/usr/bin/chromium-browser',
-                    '/usr/bin/chromium',
-                    puppeteer.executablePath()
+                    '/usr/bin/chromium'
                 ].filter(Boolean);
                 
                 console.log('[INFO] Checking Chrome paths...');
@@ -250,10 +249,14 @@ const authService = {
                         execSync('npx puppeteer browsers install chrome --force', { stdio: 'pipe' });
                         
                         // Check if installation was successful
-                        const puppeteerPath = puppeteer.executablePath();
-                        if (puppeteerPath && existsSync(puppeteerPath)) {
-                            foundChromePath = puppeteerPath;
-                            console.log(`[INFO] Puppeteer Chrome installed successfully at: ${puppeteerPath}`);
+                        try {
+                            const puppeteerPath = puppeteer.executablePath();
+                            if (puppeteerPath && existsSync(puppeteerPath)) {
+                                foundChromePath = puppeteerPath;
+                                console.log(`[INFO] Puppeteer Chrome installed successfully at: ${puppeteerPath}`);
+                            }
+                        } catch (err) {
+                            console.log('[INFO] Could not get Puppeteer executable path after installation:', err.message);
                         }
                     } catch (err) {
                         console.log('[INFO] Puppeteer browser installation failed:', err.message);
