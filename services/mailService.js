@@ -11,9 +11,22 @@ const statusMessages = {};
 const invites = {};
 
 const mailService = {
+    isBrowserSessionValid(browserSession) {
+        if (!browserSession) return false;
+        if (!browserSession.page) return false;
+        if (browserSession.page.isClosed()) return false;
+        
+        // Check if browser is still connected
+        try {
+            return browserSession.browser && browserSession.browser.connected;
+        } catch (error) {
+            return false;
+        }
+    },
+
     async getProfiles(token, page = null) {
         try {
-            if (page) {
+            if (page && !page.isClosed()) {
                 // Make API call from browser session
                 console.log('[MAIL SERVICE] Getting profiles from browser session...');
                 const profilesData = await this.makeApiCallFromBrowser(page, 'https://alpha.date/api/operator/profiles', {
@@ -22,8 +35,13 @@ const mailService = {
                 });
                 
                 if (profilesData) {
+                    console.log('[MAIL SERVICE] Profiles loaded successfully from browser session');
                     return profilesData;
+                } else {
+                    console.log('[MAIL SERVICE] Browser session failed, falling back to direct API call...');
                 }
+            } else if (page && page.isClosed()) {
+                console.log('[MAIL SERVICE] Browser page is closed, using direct API call...');
             }
 
             // Fallback to direct API call
@@ -36,7 +54,9 @@ const mailService = {
                 throw new Error(`Failed to load profiles: ${response.statusText}`);
             }
 
-            return await response.json();
+            const profiles = await response.json();
+            console.log('[MAIL SERVICE] Profiles loaded successfully via direct API call');
+            return profiles;
         } catch (error) {
             console.error('Profile loading failed:', error);
             throw error;
@@ -45,6 +65,12 @@ const mailService = {
 
     async makeApiCallFromBrowser(page, url, options = {}) {
         try {
+            // Check if page is still connected
+            if (!page || page.isClosed()) {
+                console.log('[MAIL SERVICE] Browser page is closed, cannot make API call');
+                return null;
+            }
+
             console.log(`[MAIL SERVICE] Making API call from browser: ${url}`);
             
             const result = await page.evaluate(async (url, options) => {
@@ -75,6 +101,12 @@ const mailService = {
             }
         } catch (error) {
             console.error('[MAIL SERVICE] Error making API call from browser:', error);
+            
+            // Check if it's a target closed error
+            if (error.message.includes('Target closed') || error.message.includes('Protocol error')) {
+                console.log('[MAIL SERVICE] Browser session lost, will fall back to direct API calls');
+            }
+            
             return null;
         }
     },
@@ -92,7 +124,7 @@ const mailService = {
                 let data = null;
                 
                 // Try browser session first if available
-                if (browserSession && browserSession.page) {
+                if (browserSession && browserSession.page && !browserSession.page.isClosed()) {
                     try {
                         console.log(`[MAIL SERVICE] Getting ${type} via browser session for profile ${profileId}...`);
                         data = await this.makeApiCallFromBrowser(
@@ -103,9 +135,15 @@ const mailService = {
                                 headers: { 'Authorization': `Bearer ${token}` }
                             }
                         );
+                        
+                        if (data) {
+                            console.log(`[MAIL SERVICE] Successfully got ${type} via browser session`);
+                        }
                     } catch (browserError) {
-                        console.log(`[MAIL SERVICE] Browser session failed for ${type}, falling back to direct API...`);
+                        console.log(`[MAIL SERVICE] Browser session failed for ${type}:`, browserError.message);
                     }
+                } else {
+                    console.log(`[MAIL SERVICE] Browser session not available for ${type}, using direct API`);
                 }
                 
                 // Fallback to direct API call
