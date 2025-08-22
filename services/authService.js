@@ -231,10 +231,18 @@ const authService = {
                 if (!foundChromePath) {
                     console.log('[INFO] Searching filesystem for Chrome...');
                     try {
-                        const searchResult = execSync('find /opt -name "*chrome*" -type f -executable 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
+                        // First try to find the actual Chrome binary
+                        let searchResult = execSync('find /opt -name "chrome" -type f -executable 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
                         if (searchResult && existsSync(searchResult)) {
                             foundChromePath = searchResult;
-                            console.log(`[INFO] Found Chrome via filesystem search: ${searchResult}`);
+                            console.log(`[INFO] Found Chrome binary via filesystem search: ${searchResult}`);
+                        } else {
+                            // Fallback to broader search, excluding shell scripts
+                            searchResult = execSync('find /opt -name "*chrome*" -type f -executable -not -name "*.sh" 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
+                            if (searchResult && existsSync(searchResult)) {
+                                foundChromePath = searchResult;
+                                console.log(`[INFO] Found Chrome via filesystem search: ${searchResult}`);
+                            }
                         }
                     } catch (err) {
                         console.log('[INFO] Filesystem search failed:', err.message);
@@ -271,15 +279,23 @@ const authService = {
                 
                 try {
                     // Test if Puppeteer can launch with the found path
+                    console.log('[INFO] Testing Chrome launch with path:', foundChromePath);
                     const testBrowser = await puppeteer.launch({
                         headless: 'new',
                         executablePath: foundChromePath,
-                        args: ['--no-sandbox', '--disable-setuid-sandbox']
+                        args: [
+                            '--no-sandbox',
+                            '--disable-setuid-sandbox',
+                            '--disable-dev-shm-usage',
+                            '--disable-gpu',
+                            '--disable-software-rasterizer'
+                        ]
                     });
                     await testBrowser.close();
                     console.log('[INFO] Puppeteer test launch successful with path:', foundChromePath);
                 } catch (testError) {
                     console.error('[ERROR] Puppeteer test launch failed:', testError.message);
+                    console.error('[ERROR] Full error details:', testError);
                     console.log('[INFO] Skipping Puppeteer authentication, using API method directly');
                     return await this.authenticateWithAPI(email, password);
                 }
