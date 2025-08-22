@@ -335,7 +335,7 @@ const mailService = {
                 let browserData;
                 
                 // Try browser session first if available
-                if (browserSession && browserSession.page) {
+                if (browserSession && browserSession.page && !browserSession.page.isClosed()) {
                     try {
                         console.log(`[MAIL SERVICE] Fetching mail chats via browser session for profile ${profileId}...`);
                         browserData = await this.makeApiCallFromBrowser(
@@ -373,10 +373,14 @@ const mailService = {
                             console.log(`Fetched ${pageChats.length} mail chats from page ${page}. Total: ${allChats.length}`);
                             page++;
                             continue;
+                        } else {
+                            console.log(`[MAIL SERVICE] Browser session returned no data for mail chats, falling back to direct API...`);
                         }
                     } catch (browserError) {
-                        console.log(`[MAIL SERVICE] Browser session failed for mail chats, falling back to direct API...`);
+                        console.log(`[MAIL SERVICE] Browser session failed for mail chats:`, browserError.message);
                     }
+                } else {
+                    console.log(`[MAIL SERVICE] Browser session not available for mail chats, using direct API...`);
                 }
                 
                 // Fallback to direct API call
@@ -491,7 +495,7 @@ const mailService = {
             let data;
             
             // Try browser session first if available
-            if (browserSession && browserSession.page) {
+            if (browserSession && browserSession.page && !browserSession.page.isClosed()) {
                 try {
                     console.log(`[MAIL SERVICE] Fetching last messages via browser session...`);
                     data = await this.makeApiCallFromBrowser(
@@ -515,10 +519,14 @@ const mailService = {
                             map[msg.chat_uid] = msg;
                         }
                         return map;
+                    } else {
+                        console.log(`[MAIL SERVICE] Browser session returned no data for last messages, falling back to direct API...`);
                     }
                 } catch (browserError) {
-                    console.log(`[MAIL SERVICE] Browser session failed for last messages, falling back to direct API...`);
+                    console.log(`[MAIL SERVICE] Browser session failed for last messages:`, browserError.message);
                 }
+            } else {
+                console.log(`[MAIL SERVICE] Browser session not available for last messages, using direct API...`);
             }
             
             // Fallback to direct API call
@@ -602,7 +610,7 @@ const mailService = {
             let mailData;
             
             // Try browser session first if available
-            if (browserSession && browserSession.page) {
+            if (browserSession && browserSession.page && !browserSession.page.isClosed()) {
                 try {
                     console.log(`[MAIL SERVICE] Sending mail via browser session...`);
                     mailData = await this.makeApiCallFromBrowser(
@@ -641,10 +649,14 @@ const mailService = {
                         }
                         
                         return { success: true };
+                    } else {
+                        console.log(`[MAIL SERVICE] Browser session returned no data for mail, falling back to direct API...`);
                     }
                 } catch (browserError) {
-                    console.log(`[MAIL SERVICE] Browser session failed for mail, falling back to direct API...`);
+                    console.log(`[MAIL SERVICE] Browser session failed for mail:`, browserError.message);
                 }
+            } else {
+                console.log(`[MAIL SERVICE] Browser session not available for mail, using direct API...`);
             }
             
             // Fallback to direct API call
