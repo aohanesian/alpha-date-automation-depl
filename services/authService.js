@@ -372,20 +372,114 @@ const authService = {
 
             console.log('[INFO] Filling login form...');
             
-            // Wait for login form to be available
-            await page.waitForSelector('input[name="login"], input[data-testid="email"]', { timeout: 10000 });
-            await page.waitForSelector('input[name="password"], input[data-testid="password"]', { timeout: 10000 });
+            // Wait for login form to be available with more comprehensive selectors
+            const emailSelectors = [
+                'input[name="login"]',
+                'input[data-testid="email"]',
+                'input[type="email"]',
+                'input[name="email"]',
+                'input[id*="email"]',
+                'input[id*="login"]',
+                'input[placeholder*="email"]',
+                'input[placeholder*="Email"]'
+            ];
+            
+            const passwordSelectors = [
+                'input[name="password"]',
+                'input[data-testid="password"]',
+                'input[type="password"]',
+                'input[id*="password"]',
+                'input[placeholder*="password"]',
+                'input[placeholder*="Password"]'
+            ];
+            
+            console.log('[INFO] Looking for email input field...');
+            let emailField = null;
+            for (const selector of emailSelectors) {
+                try {
+                    emailField = await page.waitForSelector(selector, { timeout: 2000 });
+                    if (emailField) {
+                        console.log(`[INFO] Found email field with selector: ${selector}`);
+                        break;
+                    }
+                } catch (err) {
+                    console.log(`[INFO] Email selector not found: ${selector}`);
+                }
+            }
+            
+            if (!emailField) {
+                console.log('[ERROR] No email field found with any selector');
+                // Take a screenshot for debugging
+                await page.screenshot({ path: '/opt/render/project/src/debug-screenshots/login-form-debug.png' });
+                throw new Error('Email field not found');
+            }
+            
+            console.log('[INFO] Looking for password input field...');
+            let passwordField = null;
+            for (const selector of passwordSelectors) {
+                try {
+                    passwordField = await page.waitForSelector(selector, { timeout: 2000 });
+                    if (passwordField) {
+                        console.log(`[INFO] Found password field with selector: ${selector}`);
+                        break;
+                    }
+                } catch (err) {
+                    console.log(`[INFO] Password selector not found: ${selector}`);
+                }
+            }
+            
+            if (!passwordField) {
+                console.log('[ERROR] No password field found with any selector');
+                // Take a screenshot for debugging
+                await page.screenshot({ path: '/opt/render/project/src/debug-screenshots/login-form-debug.png' });
+                throw new Error('Password field not found');
+            }
 
             // Fill in credentials with human-like delays
-            await page.type('input[name="login"], input[data-testid="email"]', email, { delay: 100 });
+            await emailField.type(email, { delay: 100 });
             await new Promise(resolve => setTimeout(resolve, 500));
-            await page.type('input[name="password"], input[data-testid="password"]', password, { delay: 100 });
+            await passwordField.type(password, { delay: 100 });
 
             // Wait a bit before submitting
             await new Promise(resolve => setTimeout(resolve, 1000));
 
-            // Submit the form
-            await page.click('button[data-testid="submit-btn"], button[type="submit"], input[type="submit"]');
+            // Submit the form with more comprehensive selectors
+            const submitSelectors = [
+                'button[data-testid="submit-btn"]',
+                'button[type="submit"]',
+                'input[type="submit"]',
+                'button[class*="submit"]',
+                'button[class*="login"]',
+                'button[id*="submit"]',
+                'button[id*="login"]',
+                'input[value*="Login"]',
+                'input[value*="Sign"]',
+                'button:contains("Login")',
+                'button:contains("Sign")'
+            ];
+            
+            console.log('[INFO] Looking for submit button...');
+            let submitButton = null;
+            for (const selector of submitSelectors) {
+                try {
+                    submitButton = await page.waitForSelector(selector, { timeout: 2000 });
+                    if (submitButton) {
+                        console.log(`[INFO] Found submit button with selector: ${selector}`);
+                        break;
+                    }
+                } catch (err) {
+                    console.log(`[INFO] Submit selector not found: ${selector}`);
+                }
+            }
+            
+            if (!submitButton) {
+                console.log('[ERROR] No submit button found with any selector');
+                // Take a screenshot for debugging
+                await page.screenshot({ path: '/opt/render/project/src/debug-screenshots/login-form-debug.png' });
+                throw new Error('Submit button not found');
+            }
+            
+            await submitButton.click();
             
             console.log('[INFO] Login form submitted, waiting for response...');
 
