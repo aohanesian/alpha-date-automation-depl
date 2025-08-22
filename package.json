@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "vite",
     "build": "npx vite build",
+    "build:prod": "bash build.sh",
+    "build:simple": "bash build-simple.sh",
     "preview": "vite preview",
     "start": "node server.js",
     "server:dev": "nodemon server.js",
