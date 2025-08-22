@@ -2,6 +2,13 @@
 
 echo "=== Starting build process ==="
 
+# Set production environment
+export NODE_ENV=production
+export PUPPETEER_CACHE_DIR=/opt/render/.cache/puppeteer
+export PUPPETEER_EXECUTABLE_PATH=/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome
+export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false
+export PUPPETEER_DISABLE_HEADLESS_WARNING=true
+
 # Check if we're in a production environment
 if [ "$NODE_ENV" = "production" ]; then
     echo "Production environment detected, installing Chrome..."
