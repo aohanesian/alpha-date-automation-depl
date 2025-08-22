@@ -3,6 +3,7 @@ import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 import puppeteer from 'puppeteer-extra';
+import puppeteerCore from 'puppeteer-core';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import browserSessionManager from './browserSessionManager.js';
 
@@ -198,6 +199,15 @@ const authService = {
         
         try {
             console.log('[INFO] Attempting to authenticate with Alpha.Date using Puppeteer with stealth plugin');
+            
+            // Check if ZenRows is configured and use it for better Cloudflare bypass
+            const zenRowsApiKey = process.env.ZENROWS_API_KEY || 'a99283cb465506ebb89875eeff4df36020d71c7b';
+            const useZenRows = process.env.USE_ZENROWS === 'true' || process.env.NODE_ENV === 'production';
+            
+            if (useZenRows) {
+                console.log('[INFO] Using ZenRows for Cloudflare bypass...');
+                return await this.authenticateWithZenRows(email, password, zenRowsApiKey);
+            }
             
             // Check if we're in production and if Puppeteer is available
             if (process.env.NODE_ENV === 'production') {
@@ -702,6 +712,116 @@ const authService = {
             
         } catch (error) {
             console.log('[INFO] Error handling popup modals:', error.message);
+        }
+    },
+
+    async authenticateWithZenRows(email, password, apiKey) {
+        let browser = null;
+        
+        try {
+            console.log('[INFO] Starting ZenRows authentication...');
+            
+            // Connect to ZenRows browser
+            const connectionURL = `wss://browser.zenrows.com?apikey=${apiKey}`;
+            browser = await puppeteerCore.connect({ 
+                browserWSEndpoint: connectionURL,
+                defaultViewport: { width: 1366, height: 768 }
+            });
+            
+            console.log('[INFO] Connected to ZenRows browser');
+            
+            const page = await browser.newPage();
+            
+            // Navigate to Alpha.Date login page
+            console.log('[INFO] Navigating to Alpha.Date login page via ZenRows...');
+            await page.goto('https://alpha.date/login', {
+                waitUntil: 'networkidle2',
+                timeout: 30000
+            });
+            
+            // Wait for page to load
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // Check if we're on the login page (not Cloudflare challenge)
+            const currentUrl = page.url();
+            console.log('[INFO] Current URL:', currentUrl);
+            
+            if (currentUrl.includes('cloudflare') || currentUrl.includes('challenge')) {
+                console.log('[WARN] Still on Cloudflare challenge page, waiting longer...');
+                await new Promise(resolve => setTimeout(resolve, 10000));
+            }
+            
+            // Fill in the login form using the exact selectors from the HTML
+            console.log('[INFO] Filling login form...');
+            
+            // Wait for form elements
+            await page.waitForSelector('input[name="login"]', { timeout: 10000 });
+            await page.waitForSelector('input[name="password"]', { timeout: 10000 });
+            await page.waitForSelector('button[data-testid="submit-btn"]', { timeout: 10000 });
+            
+            // Fill email
+            await page.type('input[name="login"]', email, { delay: 100 });
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Fill password
+            await page.type('input[name="password"]', password, { delay: 100 });
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Submit form
+            await page.click('button[data-testid="submit-btn"]');
+            
+            console.log('[INFO] Login form submitted, waiting for response...');
+            
+            // Wait for navigation or response
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            
+            // Check for successful login
+            const newUrl = page.url();
+            console.log('[INFO] URL after login:', newUrl);
+            
+            // Try to extract token from localStorage or cookies
+            const token = await this.extractAuthToken(page);
+            
+            if (token) {
+                console.log('[INFO] Authentication successful via ZenRows');
+                
+                // Get operator ID from the page or make an API call
+                const operatorId = await this.extractOperatorId(page, token);
+                
+                // Store browser session for future API calls
+                const browserSession = {
+                    browser: browser,
+                    page: page,
+                    token: token,
+                    operatorId: operatorId,
+                    createdAt: Date.now()
+                };
+                
+                // Don't close the browser - keep it alive for API calls
+                return {
+                    success: true,
+                    token: token,
+                    operatorId: operatorId,
+                    browserSession: browserSession,
+                    message: 'Authentication successful via ZenRows'
+                };
+            } else {
+                console.log('[INFO] Token not found, falling back to API method...');
+                if (browser) {
+                    await browser.close();
+                }
+                return await this.authenticateWithAPI(email, password);
+            }
+            
+        } catch (error) {
+            console.error('[ERROR] ZenRows authentication error:', error);
+            
+            // Fallback to API method
+            console.log('[INFO] Falling back to API authentication method...');
+            if (browser) {
+                await browser.close();
+            }
+            return await this.authenticateWithAPI(email, password);
         }
     },
 

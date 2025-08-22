@@ -20,3 +20,7 @@ services:
         value: "true"
       - key: PUPPETEER_ARGS
         value: "--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu"
+      - key: USE_ZENROWS
+        value: "true"
+      - key: ZENROWS_API_KEY
+        value: "a99283cb465506ebb89875eeff4df36020d71c7b"
