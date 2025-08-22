@@ -587,6 +587,7 @@ const authService = {
                     page: page,
                     token: token,
                     operatorId: operatorId,
+                    email: email,
                     createdAt: Date.now()
                 };
                 
@@ -794,6 +795,7 @@ const authService = {
                     page: page,
                     token: token,
                     operatorId: operatorId,
+                    email: email,
                     createdAt: Date.now()
                 };
                 
@@ -981,6 +983,8 @@ const authService = {
 
     async extractOperatorId(page, token) {
         try {
+            console.log('[INFO] Extracting operator ID...');
+            
             // Try to get operator ID from page content
             const operatorId = await page.evaluate(() => {
                 // Look for operator ID in various places
@@ -999,10 +1003,48 @@ const authService = {
             });
 
             if (operatorId) {
+                console.log('[INFO] Operator ID found in page content:', operatorId);
                 return operatorId;
             }
 
-            // If not found, make an API call from within the browser session
+            // If not found, try to navigate to a page that might contain operator info
+            console.log('[INFO] Operator ID not found in page content, trying to navigate to dashboard...');
+            
+            try {
+                await page.goto('https://alpha.date/dashboard', { waitUntil: 'networkidle2', timeout: 10000 });
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // Try to extract from dashboard page
+                const dashboardOperatorId = await page.evaluate(() => {
+                    // Look for operator ID in dashboard page
+                    const scripts = document.querySelectorAll('script');
+                    for (const script of scripts) {
+                        const content = script.textContent;
+                        const match = content.match(/"operator_id"\s*:\s*"?(\d+)"?/);
+                        if (match) return match[1];
+                    }
+                    
+                    // Check for any element with operator ID
+                    const elements = document.querySelectorAll('[data-operator-id], [data-operator], .operator-id');
+                    for (const element of elements) {
+                        const id = element.getAttribute('data-operator-id') || 
+                                  element.getAttribute('data-operator') || 
+                                  element.textContent;
+                        if (id && /^\d+$/.test(id)) return id;
+                    }
+                    
+                    return null;
+                });
+                
+                if (dashboardOperatorId) {
+                    console.log('[INFO] Operator ID found in dashboard:', dashboardOperatorId);
+                    return dashboardOperatorId;
+                }
+            } catch (navError) {
+                console.log('[INFO] Could not navigate to dashboard:', navError.message);
+            }
+
+            // If still not found, make an API call from within the browser session
             console.log('[INFO] Making API call from browser session to get operator info...');
             const operatorData = await this.makeApiCallFromBrowser(page, 'https://alpha.date/api/operator/info', {
                 method: 'GET',
@@ -1013,9 +1055,11 @@ const authService = {
             });
 
             if (operatorData && operatorData.operator_id) {
+                console.log('[INFO] Operator ID found via API call:', operatorData.operator_id);
                 return operatorData.operator_id;
             }
 
+            console.log('[WARN] Could not extract operator ID from any source');
             return null;
         } catch (error) {
             console.error('[ERROR] Error extracting operator ID:', error);

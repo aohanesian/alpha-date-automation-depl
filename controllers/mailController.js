@@ -81,7 +81,7 @@ router.get('/profiles', async (req, res) => {
         let profiles = null;
         
         // Try to find browser session by session ID or email
-        const email = req.session.email;
+        const email = req.userEmail || req.session.email;
         console.log(`[MAIL] Looking for browser session for email: ${email}`);
         
         if (req.session.browserSession && req.session.browserSession.hasBrowserSession) {
@@ -121,7 +121,7 @@ router.get('/attachments/:profileId', async (req, res) => {
         }
 
         // Get browser session for this request
-        const email = req.session.email;
+        const email = req.userEmail || req.session.email;
         const browserSession = sessionAwareService.getBrowserSession(req.sessionID, email);
         
         const attachments = await mailService.getAttachments(profileId, token, forceRefresh === 'true', browserSession);

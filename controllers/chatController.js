@@ -23,31 +23,34 @@ function extractToken(req, res, next) {
         return next();
     }
     
-    // Try to get session token from X-Session-Token header
-    const sessionToken = req.get('X-Session-Token');
-    if (sessionToken) {
-        // Look up session by ID and extract token
-        req.sessionStore.get(sessionToken, (err, sessionData) => {
-            if (!err && sessionData && sessionData.token) {
-                req.token = sessionData.token;
-                req.userEmail = sessionData.email;
-                req.operatorId = sessionData.operatorId;
-                console.log('Token from session store:', req.token, 'OperatorId:', req.operatorId);
-                return next();
-            } else {
-                console.log('Session token not found or expired:', sessionToken);
-                req.token = null;
-                next();
-            }
-        });
-        return;
-    }
+            // Try to get session token from X-Session-Token header
+        const sessionToken = req.get('X-Session-Token');
+        if (sessionToken) {
+            // Look up session by ID and extract token
+            req.sessionStore.get(sessionToken, (err, sessionData) => {
+                if (!err && sessionData && sessionData.token) {
+                    req.token = sessionData.token;
+                    req.userEmail = sessionData.email;
+                    req.operatorId = sessionData.operatorId;
+                    // Also set session email for browser session lookup
+                    req.session.email = sessionData.email;
+                    console.log('Token from session store:', req.token, 'OperatorId:', req.operatorId, 'Email:', req.userEmail);
+                    return next();
+                } else {
+                    console.log('Session token not found or expired:', sessionToken);
+                    req.token = null;
+                    next();
+                }
+            });
+            return;
+        }
     
     // Fallback to current session token
     if (req.session && req.session.token) {
         req.token = req.session.token;
         req.operatorId = req.session.operatorId;
-        console.log('Token from current session:', req.token, 'OperatorId:', req.operatorId);
+        req.userEmail = req.session.email;
+        console.log('Token from current session:', req.token, 'OperatorId:', req.operatorId, 'Email:', req.userEmail);
         return next();
     }
     
@@ -81,7 +84,7 @@ router.get('/profiles', async (req, res) => {
         let profiles = null;
         
         // Try to find browser session by session ID or email
-        const email = req.session.email;
+        const email = req.userEmail || req.session.email;
         console.log(`[CHAT] Looking for browser session for email: ${email}`);
         
         if (req.session.browserSession && req.session.browserSession.hasBrowserSession) {
