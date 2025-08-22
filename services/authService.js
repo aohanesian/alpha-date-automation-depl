@@ -234,8 +234,8 @@ const authService = {
                 
                 for (const path of possiblePaths) {
                     try {
-                        const fs = await import('fs');
-                        if (fs.existsSync(path)) {
+                        const { existsSync } = await import('fs');
+                        if (existsSync(path)) {
                             launchOptions.executablePath = path;
                             console.log(`[INFO] Using Chrome executable: ${path}`);
                             break;

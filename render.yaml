@@ -3,10 +3,48 @@ services:
     name: alpha-date-automation
     runtime: node
     buildCommand: |
+      # Install system dependencies for Chrome
+      apt-get update && apt-get install -y \
+        wget \
+        gnupg \
+        ca-certificates \
+        procps \
+        libxss1 \
+        libnss3 \
+        libatk-bridge2.0-0 \
+        libgtk-3-0 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libasound2 \
+        libxrandr2 \
+        libxdamage1 \
+        libxfixes3 \
+        libx11-xcb1 \
+        libdrm2 \
+        libgbm1 \
+        libasound2 \
+        libatspi2.0-0 \
+        libxshmfence1
+      
+      # Install Chrome
+      wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add -
+      echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
+      apt-get update && apt-get install -y google-chrome-stable
+      
+      # Install Node.js dependencies
       npm install
+      
+      # Install Puppeteer browsers
       npx puppeteer browsers install chrome
+      
+      # Debug Chrome installation
       echo "Chrome installed at: $(npx puppeteer browsers list)"
       npm run debug:chrome
+      
+      # Test Chrome functionality
+      npm run test:chrome
+      
+      # Build the application
       npm run build
     startCommand: npm start
     envVars:
@@ -16,3 +54,7 @@ services:
         value: /opt/render/.cache/puppeteer
       - key: PUPPETEER_EXECUTABLE_PATH
         value: /opt/render/.cache/puppeteer/chrome-linux/chrome
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: "false"
+      - key: PUPPETEER_DISABLE_HEADLESS_WARNING
+        value: "true"
