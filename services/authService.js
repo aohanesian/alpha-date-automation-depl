@@ -6,8 +6,20 @@ import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import browserSessionManager from './browserSessionManager.js';
 
-// Apply the stealth plugin to avoid bot detection
-puppeteer.use(StealthPlugin());
+// Apply the stealth plugin to avoid bot detection with enhanced configuration
+puppeteer.use(StealthPlugin({
+    // Enhanced stealth options
+    runOnEveryFrame: false,
+    // Disable some features that might be detected
+    webglVendor: 'Intel Inc.',
+    webglRenderer: 'Intel Iris OpenGL Engine',
+    // Randomize hardware concurrency
+    hardwareConcurrency: Math.floor(Math.random() * 8) + 4,
+    // Randomize device memory
+    deviceMemory: Math.floor(Math.random() * 8) + 4,
+    // Randomize platform
+    platform: ['Win32', 'MacIntel', 'Linux x86_64'][Math.floor(Math.random() * 3)]
+}));
 
 // Store intervals by profileId
 const profileOnlineIntervals = new Map(); // Track individual profile online status
@@ -301,7 +313,7 @@ const authService = {
                 }
             }
             
-            // Launch browser with stealth settings
+            // Launch browser with enhanced stealth settings
             const launchOptions = {
                 headless: process.env.NODE_ENV === 'production' ? 'new' : false, // Use headless in production
                 args: [
@@ -316,7 +328,26 @@ const authService = {
                     '--disable-backgrounding-occluded-windows',
                     '--disable-renderer-backgrounding',
                     '--disable-web-security',
-                    '--disable-features=VizDisplayCompositor'
+                    '--disable-features=VizDisplayCompositor',
+                    // Additional stealth arguments
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-extensions',
+                    '--disable-plugins',
+                    '--disable-default-apps',
+                    '--disable-sync',
+                    '--disable-translate',
+                    '--hide-scrollbars',
+                    '--mute-audio',
+                    '--no-default-browser-check',
+                    '--no-pings',
+                    '--disable-client-side-phishing-detection',
+                    '--disable-component-update',
+                    '--disable-domain-reliability',
+                    '--disable-features=TranslateUI',
+                    '--disable-ipc-flooding-protection',
+                    '--disable-hang-monitor',
+                    '--disable-prompt-on-repost',
+                    '--disable-background-networking'
                 ]
             };
 
@@ -330,24 +361,42 @@ const authService = {
 
             const page = await browser.newPage();
 
-            // Set realistic user agent
-            await page.setUserAgent(
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            );
+            // Evaluate stealth effectiveness
+            await this.evaluateStealthEffectiveness(page);
 
-            // Randomize viewport slightly to avoid fingerprinting
-            await page.setViewport({
-                width: Math.floor(1024 + Math.random() * 100),
-                height: Math.floor(768 + Math.random() * 100),
-            });
+            // Set realistic user agent with more variety
+            const userAgents = [
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+            ];
+            const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+            await page.setUserAgent(randomUserAgent);
+
+            // Randomize viewport to avoid fingerprinting
+            const viewports = [
+                { width: 1366, height: 768 },
+                { width: 1920, height: 1080 },
+                { width: 1440, height: 900 },
+                { width: 1536, height: 864 },
+                { width: 1280, height: 720 }
+            ];
+            const randomViewport = viewports[Math.floor(Math.random() * viewports.length)];
+            await page.setViewport(randomViewport);
 
             // Set additional headers to appear more human-like
             await page.setExtraHTTPHeaders({
-                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Language': 'en-US,en;q=0.9,en;q=0.8',
                 'Accept-Encoding': 'gzip, deflate, br',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0'
             });
 
             console.log('[INFO] Navigating to Alpha.Date login page...');
@@ -361,7 +410,7 @@ const authService = {
             // Wait a bit to let any initial scripts load
             await new Promise(resolve => setTimeout(resolve, 2000));
 
-            // Check for Cloudflare challenge
+            // Check for Cloudflare challenge or popup modals
             const cloudflareDetected = await this.checkForCloudflareChallenge(page);
             if (cloudflareDetected) {
                 console.log('[INFO] Cloudflare challenge detected, waiting for manual resolution...');
@@ -369,6 +418,9 @@ const authService = {
                 // Wait for user to manually solve the challenge
                 await this.waitForCloudflareResolution(page);
             }
+            
+            // Check for and handle popup modals
+            await this.handlePopupModals(page);
 
             console.log('[INFO] Filling login form...');
             
@@ -596,6 +648,113 @@ const authService = {
         } catch (error) {
             console.error('[ERROR] Timeout waiting for Cloudflare challenge resolution:', error);
             throw new Error('Cloudflare challenge resolution timeout');
+        }
+    },
+
+    async handlePopupModals(page) {
+        console.log('[INFO] Checking for popup modals...');
+        
+        try {
+            // Wait a bit for any modals to appear
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Common popup modal selectors
+            const modalSelectors = [
+                'button:contains("Got it")',
+                'button:contains("OK")',
+                'button:contains("Accept")',
+                'button:contains("Continue")',
+                'button:contains("Close")',
+                '.modal button',
+                '.popup button',
+                '[role="dialog"] button',
+                '.dialog button'
+            ];
+            
+            for (const selector of modalSelectors) {
+                try {
+                    const button = await page.$(selector);
+                    if (button) {
+                        console.log(`[INFO] Found popup modal with button: ${selector}`);
+                        await button.click();
+                        console.log('[INFO] Clicked popup modal button');
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        break;
+                    }
+                } catch (err) {
+                    // Continue to next selector
+                }
+            }
+            
+            // Also try to find and click any visible buttons in modals
+            const visibleButtons = await page.$$eval('button', buttons => {
+                return buttons
+                    .filter(button => {
+                        const rect = button.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0 && 
+                               window.getComputedStyle(button).display !== 'none';
+                    })
+                    .map(button => button.textContent.trim())
+                    .filter(text => text.length > 0);
+            });
+            
+            console.log('[INFO] Visible buttons found:', visibleButtons);
+            
+        } catch (error) {
+            console.log('[INFO] Error handling popup modals:', error.message);
+        }
+    },
+
+    async evaluateStealthEffectiveness(page) {
+        console.log('[INFO] Evaluating stealth effectiveness...');
+        
+        try {
+            const stealthResults = await page.evaluate(() => {
+                const results = {};
+                
+                // Check for automation indicators
+                results.navigatorWebdriver = navigator.webdriver;
+                results.chromeRuntime = typeof chrome !== 'undefined' && chrome.runtime;
+                results.automationControlled = navigator.webdriver === true;
+                
+                // Check for headless indicators
+                results.userAgent = navigator.userAgent;
+                results.platform = navigator.platform;
+                results.language = navigator.language;
+                results.languages = navigator.languages;
+                
+                // Check for plugins
+                results.pluginsLength = navigator.plugins.length;
+                results.mimeTypesLength = navigator.mimeTypes.length;
+                
+                // Check for screen properties
+                results.screenWidth = screen.width;
+                results.screenHeight = screen.height;
+                results.colorDepth = screen.colorDepth;
+                results.pixelDepth = screen.pixelDepth;
+                
+                // Check for window properties
+                results.innerWidth = window.innerWidth;
+                results.innerHeight = window.innerHeight;
+                results.outerWidth = window.outerWidth;
+                results.outerHeight = window.outerHeight;
+                
+                return results;
+            });
+            
+            console.log('[INFO] Stealth evaluation results:', stealthResults);
+            
+            // Check for potential detection indicators
+            if (stealthResults.navigatorWebdriver) {
+                console.log('[WARN] navigator.webdriver is detected - stealth may be compromised');
+            }
+            
+            if (stealthResults.automationControlled) {
+                console.log('[WARN] Automation controlled flag detected - stealth may be compromised');
+            }
+            
+        } catch (error) {
+            console.log('[INFO] Error evaluating stealth effectiveness:', error.message);
         }
     },
 
