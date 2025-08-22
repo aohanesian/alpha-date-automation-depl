@@ -668,19 +668,50 @@ const authService = {
         
         try {
             // Wait a bit for any modals to appear
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // First, try to find and click "Got it" buttons specifically
+            const gotItButtons = await page.$$eval('button', buttons => {
+                return buttons
+                    .filter(button => {
+                        const text = button.textContent.trim().toLowerCase();
+                        return text.includes('got it') || text.includes('gotit') || text.includes('got-it');
+                    })
+                    .map(button => ({
+                        text: button.textContent.trim(),
+                        visible: button.offsetParent !== null,
+                        rect: button.getBoundingClientRect()
+                    }));
+            });
+            
+            if (gotItButtons.length > 0) {
+                console.log('[INFO] Found "Got it" buttons:', gotItButtons);
+                for (const buttonInfo of gotItButtons) {
+                    if (buttonInfo.visible) {
+                        console.log(`[INFO] Clicking visible "Got it" button: "${buttonInfo.text}"`);
+                        await page.evaluate((text) => {
+                            const buttons = Array.from(document.querySelectorAll('button'));
+                            const button = buttons.find(b => b.textContent.trim().toLowerCase().includes('got it'));
+                            if (button) button.click();
+                        }, buttonInfo.text);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        break;
+                    }
+                }
+            }
             
             // Common popup modal selectors
             const modalSelectors = [
-                'button:contains("Got it")',
                 'button:contains("OK")',
                 'button:contains("Accept")',
                 'button:contains("Continue")',
                 'button:contains("Close")',
+                'button:contains("Dismiss")',
                 '.modal button',
                 '.popup button',
                 '[role="dialog"] button',
-                '.dialog button'
+                '.dialog button',
+                '.overlay button'
             ];
             
             for (const selector of modalSelectors) {
@@ -704,13 +735,14 @@ const authService = {
                     .filter(button => {
                         const rect = button.getBoundingClientRect();
                         return rect.width > 0 && rect.height > 0 && 
-                               window.getComputedStyle(button).display !== 'none';
+                               window.getComputedStyle(button).display !== 'none' &&
+                               window.getComputedStyle(button).visibility !== 'hidden';
                     })
                     .map(button => button.textContent.trim())
                     .filter(text => text.length > 0);
             });
             
-            console.log('[INFO] Visible buttons found:', visibleButtons);
+            console.log('[INFO] All visible buttons found:', visibleButtons);
             
         } catch (error) {
             console.log('[INFO] Error handling popup modals:', error.message);
@@ -866,9 +898,91 @@ const authService = {
                 ]
             };
 
-            // Add executable path if available
-            if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-                launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+            // Find Chrome executable path
+            let foundChromePath = null;
+            const { existsSync } = await import('fs');
+            const { execSync } = await import('child_process');
+            
+            // Try to find Chrome using system commands
+            let systemChromePath = null;
+            try {
+                systemChromePath = execSync('which google-chrome', { encoding: 'utf8' }).trim();
+            } catch (err) {
+                console.log('[INFO] google-chrome not found in PATH');
+            }
+            
+            const possiblePaths = [
+                process.env.PUPPETEER_EXECUTABLE_PATH,
+                systemChromePath,
+                '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
+                '/opt/render/.cache/puppeteer/chrome-linux/chrome',
+                '/usr/bin/google-chrome-stable',
+                '/usr/bin/google-chrome',
+                '/usr/bin/chromium-browser',
+                '/usr/bin/chromium'
+            ].filter(Boolean);
+            
+            console.log('[INFO] Checking Chrome paths for proxy authentication...');
+            for (const path of possiblePaths) {
+                if (existsSync(path)) {
+                    foundChromePath = path;
+                    console.log(`[INFO] Found Chrome at: ${path}`);
+                    break;
+                } else {
+                    console.log(`[INFO] Chrome not found at: ${path}`);
+                }
+            }
+            
+            // If still not found, try to search the filesystem
+            if (!foundChromePath) {
+                console.log('[INFO] Searching filesystem for Chrome...');
+                try {
+                    // First try to find the actual Chrome binary
+                    let searchResult = execSync('find /opt -name "chrome" -type f -executable 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
+                    if (searchResult && existsSync(searchResult)) {
+                        foundChromePath = searchResult;
+                        console.log(`[INFO] Found Chrome binary via filesystem search: ${searchResult}`);
+                    } else {
+                        // Fallback to broader search, excluding shell scripts
+                        searchResult = execSync('find /opt -name "*chrome*" -type f -executable -not -name "*.sh" 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
+                        if (searchResult && existsSync(searchResult)) {
+                            foundChromePath = searchResult;
+                            console.log(`[INFO] Found Chrome via filesystem search: ${searchResult}`);
+                        }
+                    }
+                } catch (err) {
+                    console.log('[INFO] Filesystem search failed:', err.message);
+                }
+            }
+            
+            // If still not found, try to install Puppeteer browsers
+            if (!foundChromePath) {
+                console.log('[INFO] Chrome not found, attempting to install Puppeteer browsers...');
+                try {
+                    // Install Puppeteer browsers
+                    execSync('npx puppeteer browsers install chrome --force', { stdio: 'pipe' });
+                    
+                    // Check if installation was successful
+                    try {
+                        const puppeteerPath = puppeteer.executablePath();
+                        if (puppeteerPath && existsSync(puppeteerPath)) {
+                            foundChromePath = puppeteerPath;
+                            console.log(`[INFO] Puppeteer Chrome installed successfully at: ${puppeteerPath}`);
+                        }
+                    } catch (err) {
+                        console.log('[INFO] Could not get Puppeteer executable path after installation:', err.message);
+                    }
+                } catch (err) {
+                    console.log('[INFO] Puppeteer browser installation failed:', err.message);
+                }
+            }
+            
+            if (foundChromePath) {
+                launchOptions.executablePath = foundChromePath;
+                console.log(`[INFO] Using Chrome executable: ${foundChromePath}`);
+            } else {
+                console.log('[ERROR] No Chrome executable found for proxy authentication');
+                throw new Error('Chrome executable not found');
             }
 
             console.log('[INFO] Launching browser with proxy configuration...');
