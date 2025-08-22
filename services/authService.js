@@ -827,6 +827,42 @@ const authService = {
         }
     },
 
+    decodeJWTToken(token) {
+        try {
+            // JWT tokens have 3 parts separated by dots
+            const parts = token.split('.');
+            if (parts.length !== 3) {
+                throw new Error('Invalid JWT format');
+            }
+            
+            // Decode the payload (second part)
+            const payload = parts[1];
+            
+            // Add padding if needed for base64 decode
+            const paddedPayload = payload + '='.repeat((4 - payload.length % 4) % 4);
+            
+            // Decode base64
+            const decodedPayload = Buffer.from(paddedPayload, 'base64').toString('utf8');
+            
+            // Parse JSON
+            const tokenData = JSON.parse(decodedPayload);
+            
+            console.log('[INFO] JWT token decoded successfully:', {
+                id: tokenData.id,
+                email: tokenData.email,
+                agency_id: tokenData.agency_id,
+                external_id: tokenData.external_id
+            });
+            
+            // Return the operator ID
+            return tokenData.id ? tokenData.id.toString() : null;
+            
+        } catch (error) {
+            console.error('[ERROR] Failed to decode JWT token:', error.message);
+            return null;
+        }
+    },
+
     async evaluateStealthEffectiveness(page) {
         console.log('[INFO] Evaluating stealth effectiveness...');
         
@@ -1044,19 +1080,16 @@ const authService = {
                 console.log('[INFO] Could not navigate to dashboard:', navError.message);
             }
 
-            // If still not found, make an API call from within the browser session
-            console.log('[INFO] Making API call from browser session to get operator info...');
-            const operatorData = await this.makeApiCallFromBrowser(page, 'https://alpha.date/api/operator/info', {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+            // If still not found, try to decode the JWT token
+            console.log('[INFO] Attempting to decode JWT token to extract operator ID...');
+            try {
+                const operatorId = this.decodeJWTToken(token);
+                if (operatorId) {
+                    console.log('[INFO] Operator ID found via JWT decode:', operatorId);
+                    return operatorId;
                 }
-            });
-
-            if (operatorData && operatorData.operator_id) {
-                console.log('[INFO] Operator ID found via API call:', operatorData.operator_id);
-                return operatorData.operator_id;
+            } catch (jwtError) {
+                console.log('[INFO] JWT decode failed:', jwtError.message);
             }
 
             console.log('[WARN] Could not extract operator ID from any source');
