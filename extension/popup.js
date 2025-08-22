@@ -5,10 +5,8 @@ document.addEventListener('DOMContentLoaded', function() {
   const tokenPreview = document.getElementById('tokenPreview');
   const copyBtn = document.getElementById('copyBtn');
   const domainBtns = document.querySelectorAll('.domain-btn');
-  const cfClearanceInput = document.getElementById('cfClearance');
   
   let currentToken = null;
-  let currentCfClearance = null;
   
   // Update status display
   function updateStatus(message, type = 'info') {
@@ -34,11 +32,11 @@ document.addEventListener('DOMContentLoaded', function() {
         target: { tabId: tab.id },
         func: () => {
           const token = localStorage.getItem('token');
-          return { token };
+          return token;
         }
       });
       
-      const { token } = results[0].result;
+      const token = results[0].result;
       
       if (!token) {
         updateStatus('No token found in localStorage. Please log in to Alpha.Date first.', 'error');
@@ -46,12 +44,9 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       
       currentToken = token;
+      tokenPreview.textContent = token.substring(0, 50) + '...';
+      tokenSection.style.display = 'block';
       updateStatus('✅ Token extracted successfully!', 'success');
-      
-      // Store the token for later use
-      chrome.storage.local.set({ 
-        extractedToken: token
-      });
       
     } catch (error) {
       console.error('Error extracting token:', error);
@@ -80,13 +75,6 @@ document.addEventListener('DOMContentLoaded', function() {
     btn.addEventListener('click', async () => {
       if (!currentToken) {
         updateStatus('No token available. Extract token first.', 'error');
-        return;
-      }
-      
-      // Get cf_clearance from input field
-      currentCfClearance = cfClearanceInput.value.trim();
-      if (!currentCfClearance) {
-        updateStatus('Please enter the cf_clearance cookie value.', 'error');
         return;
       }
       
@@ -135,125 +123,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (tab.url.includes('alpha.date')) {
       updateStatus('On Alpha.Date - ready to extract token', 'info');
     } else if (tab.url.includes('alpha-bot.date') || tab.url.includes('alpha-date-automation-depl.onrender.com') || tab.url.includes('localhost:5173')) {
-      // Check if we have a stored token
-      chrome.storage.local.get(['extractedToken'], function(result) {
-        if (result.extractedToken) {
-          currentToken = result.extractedToken;
-          updateStatus('✅ Token available - ready to login', 'success');
-          // Show login button instead of extract button
-          extractBtn.textContent = '🔐 Login with Extension';
-          extractBtn.onclick = loginWithExtension;
-          // Show the token section with cookie input
-          tokenSection.style.display = 'block';
-          tokenPreview.textContent = result.extractedToken.substring(0, 50) + '...';
-        } else {
-          updateStatus('Please navigate to Alpha.Date first', 'info');
-        }
-      });
+      updateStatus('On automation domain - ready to create session', 'info');
     } else {
       updateStatus('Navigate to Alpha.Date to extract token', 'info');
     }
   });
-  
-  // Function to login with extension (creates session and logs in)
-  async function loginWithExtension() {
-    if (!currentToken) {
-      updateStatus('No token available. Extract token first.', 'error');
-      return;
-    }
-    
-    try {
-      updateStatus('Creating session and logging in...', 'info');
-      
-      // Get current tab URL to determine the domain
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      const currentUrl = new URL(tab.url);
-      
-      // Determine the correct API URL based on the current domain
-      let apiUrl;
-      if (currentUrl.hostname === 'localhost' && currentUrl.port === '5173') {
-        // Frontend is on localhost:5173, API is on localhost:3000
-        apiUrl = 'http://localhost:3000';
-      } else if (currentUrl.hostname === 'localhost' && currentUrl.port === '3000') {
-        // Both frontend and API on localhost:3000
-        apiUrl = currentUrl.origin;
-      } else {
-        // Production domains - use the same origin
-        apiUrl = currentUrl.origin;
-      }
-      
-              // Get cf_clearance from input field
-      currentCfClearance = cfClearanceInput.value.trim();
-      if (!currentCfClearance) {
-        updateStatus('Please enter the cf_clearance cookie value.', 'error');
-        return;
-      }
-      
-      // Create session using the token
-        const response = await fetch(`${apiUrl}/api/auth/create-session-from-token`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            token: currentToken,
-            cfClearance: currentCfClearance
-          })
-        });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        updateStatus('✅ Session created! Logging you in...', 'success');
-        
-        // Inject session data into the current page
-        chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: (sessionToken, userData) => {
-            // Store the session data in localStorage
-            const alphaAutoData = {
-              email: userData.email,
-              token: 'session-based',
-              operatorId: userData.operatorId,
-              sessionToken: sessionToken
-            };
-            localStorage.setItem('alphaAutoData', JSON.stringify(alphaAutoData));
-            
-            // Show a brief success message
-            const successMsg = document.createElement('div');
-            successMsg.style.cssText = `
-              position: fixed;
-              top: 20px;
-              right: 20px;
-              background: #4CAF50;
-              color: white;
-              padding: 15px 20px;
-              border-radius: 8px;
-              z-index: 10000;
-              font-family: Arial, sans-serif;
-              box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            `;
-            successMsg.textContent = '✅ Logged in successfully!';
-            document.body.appendChild(successMsg);
-            
-            // Reload the page after a brief delay
-            setTimeout(() => {
-              window.location.reload();
-            }, 1500);
-          },
-          args: [result.sessionToken, result.userData]
-        });
-      } else {
-        throw new Error(result.error || 'Unknown error');
-      }
-      
-    } catch (error) {
-      console.error('Error logging in with extension:', error);
-      updateStatus(`Error logging in: ${error.message}`, 'error');
-    }
-  }
 });

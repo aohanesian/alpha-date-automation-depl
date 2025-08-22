@@ -15,10 +15,87 @@ const __dirname = path.dirname(__filename);
 import chatController from './controllers/chatController.js';
 import mailController from './controllers/mailController.js';
 import authController from './controllers/authController.js';
-import puppeteerController from './controllers/puppeteerController.js';
+import captchaController from './controllers/captchaController.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Statistics tracking
+let totalMessagesSent = 0;
+let totalMailsSent = 0;
+let statisticsLastUpdated = Date.now();
+
+// Firebase statistics functions
+async function loadStatisticsFromFirebase() {
+    try {
+        // Load messages statistics
+        const messagesResponse = await fetch('https://firestore.googleapis.com/v1/projects/alpha-date-sender/databases/(default)/documents/statistics/messages');
+        if (messagesResponse.ok) {
+            const messagesData = await messagesResponse.json();
+            totalMessagesSent = messagesData.fields?.count?.integerValue || 0;
+        }
+        
+        // Load mails statistics
+        const mailsResponse = await fetch('https://firestore.googleapis.com/v1/projects/alpha-date-sender/databases/(default)/documents/statistics/mails');
+        if (mailsResponse.ok) {
+            const mailsData = await mailsResponse.json();
+            totalMailsSent = mailsData.fields?.count?.integerValue || 0;
+        }
+        
+        console.log(`[STATISTICS] Loaded from Firebase: ${totalMessagesSent} messages, ${totalMailsSent} mails`);
+    } catch (error) {
+        console.error('[STATISTICS] Error loading from Firebase:', error);
+    }
+}
+
+async function saveStatisticsToFirebase() {
+    try {
+        // Save messages statistics
+        await fetch('https://firestore.googleapis.com/v1/projects/alpha-date-sender/databases/(default)/documents/statistics/messages', {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                fields: {
+                    count: { integerValue: totalMessagesSent }
+                }
+            })
+        });
+        
+        // Save mails statistics
+        await fetch('https://firestore.googleapis.com/v1/projects/alpha-date-sender/databases/(default)/documents/statistics/mails', {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                fields: {
+                    count: { integerValue: totalMailsSent }
+                }
+            })
+        });
+        
+        console.log(`[STATISTICS] Saved to Firebase: ${totalMessagesSent} messages, ${totalMailsSent} mails`);
+    } catch (error) {
+        console.error('[STATISTICS] Error saving to Firebase:', error);
+    }
+}
+
+// Statistics increment functions
+function incrementMessagesSent() {
+    totalMessagesSent++;
+    statisticsLastUpdated = Date.now();
+}
+
+function incrementMailsSent() {
+    totalMailsSent++;
+    statisticsLastUpdated = Date.now();
+}
+
+// Make functions globally available
+global.incrementMessagesSent = incrementMessagesSent;
+global.incrementMailsSent = incrementMailsSent;
 
 // Middleware - Order is important!
 app.use(cors({
@@ -38,11 +115,7 @@ app.use(cors({
             process.env.VITE_API_URL,
         ];
 
-        // Allow Chrome extensions
-        if (origin && origin.startsWith('chrome-extension://')) {
-            console.log('CORS allowed Chrome extension:', origin);
-            callback(null, true);
-        } else if (allowedOrigins.indexOf(origin) !== -1) {
+        if (allowedOrigins.indexOf(origin) !== -1) {
             console.log('CORS allowed origin:', origin);
             callback(null, true);
         } else {
@@ -66,10 +139,10 @@ app.use(session({
     saveUninitialized: true, // Allow session creation for new users
     name: 'alphaSessionId', // Custom session name
     cookie: {
-        secure: true, // Always use secure cookies for HTTPS
+        secure: process.env.NODE_ENV === 'production', // Only secure in production
         httpOnly: true,
         maxAge: 9 * 60 * 60 * 1000, // 9 hours in milliseconds
-        sameSite: 'none' // Required for cross-origin requests with secure cookies
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' // Adjust for local development
         // Removed domain setting - let it default to current domain for proper subdomain handling
     }
 }));
@@ -94,15 +167,25 @@ app.use((req, res, next) => {
     next();
 });
 
-
-
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Statistics API endpoints
+app.get('/api/statistics', (req, res) => {
+    res.json({
+        success: true,
+        statistics: {
+            totalMessagesSent,
+            totalMailsSent,
+            lastUpdated: statisticsLastUpdated
+        }
+    });
+});
 
 // Routes
 app.use('/api/auth', authController);
 app.use('/api/chat', chatController);
 app.use('/api/mail', mailController);
-app.use('/api/puppeteer', puppeteerController);
+app.use('/api/captcha', captchaController);
 
 // CORS test endpoint
 app.get('/api/cors-test', (req, res) => {
@@ -161,6 +244,11 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// Captcha test interface
+app.get('/captcha-test', (req, res) => {
+    res.sendFile(path.join(__dirname, 'captcha-test.html'));
+});
+
 // Serve the main dashboard
 app.use(express.static(path.join(__dirname, 'dist'), {
     maxAge: '1y',
@@ -173,7 +261,17 @@ app.get('*', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
+    
+    // Load initial statistics from Firebase
+    await loadStatisticsFromFirebase();
+    
+    // Set up hourly statistics save to Firebase
+    setInterval(async () => {
+        await saveStatisticsToFirebase();
+    }, 60 * 60 * 1000); // Every hour
+    
+    console.log('[STATISTICS] Server started with statistics tracking enabled');
 });

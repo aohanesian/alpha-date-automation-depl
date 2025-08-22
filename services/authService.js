@@ -2,6 +2,12 @@
 import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import browserSessionManager from './browserSessionManager.js';
+
+// Apply the stealth plugin to avoid bot detection
+puppeteer.use(StealthPlugin());
 
 // Store intervals by profileId
 const profileOnlineIntervals = new Map(); // Track individual profile online status
@@ -34,15 +40,61 @@ const authService = {
         }
     },
 
-    async sendOnlineStatus(operatorId, token, profileId, cfClearance = null) {
+    async sendOnlineStatus(operatorId, token, profileId, browserSession = null) {
         try {
             if (!profileId) {
                 throw new Error('Profile ID is required for online status');
             }
 
-            // TEMPORARILY DISABLE ONLINE STATUS TO AVOID CLOUDFLARE ISSUES
-            console.log(`[ONLINE STATUS] Online status temporarily disabled for profile ${profileId}, operator ${operatorId}`);
-            console.log(`[ONLINE STATUS] This feature will be re-enabled once we resolve the cross-origin Cloudflare protection`);
+            const payload = {
+                external_id: profileId.toString(),
+                operator_id: operatorId,
+                status: 1
+            };
+
+            console.log(`[ONLINE STATUS] Sending online status for profile ${profileId}, operator ${operatorId}`);
+
+            // Try browser session first if available
+            if (browserSession && browserSession.page) {
+                try {
+                    console.log('[ONLINE STATUS] Attempting to send online status via browser session...');
+                    const result = await this.makeApiCallFromBrowser(
+                        browserSession.page,
+                        'https://alpha.date/api/operator/setProfileOnline',
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: payload
+                        }
+                    );
+                    
+                    if (result) {
+                        console.log(`[ONLINE STATUS] Successfully sent online status for profile ${profileId} via browser`);
+                        return true;
+                    }
+                } catch (browserError) {
+                    console.log('[ONLINE STATUS] Browser session failed, falling back to direct API call...');
+                }
+            }
+
+            // Fallback to direct API call
+            const response = await fetch('https://alpha.date/api/operator/setProfileOnline', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to send online status for profile ${profileId}: ${response.statusText}`);
+            }
+
+            console.log(`[ONLINE STATUS] Successfully sent online status for profile ${profileId} via direct API`);
             return true;
         } catch (error) {
             console.error(`[ONLINE STATUS] Error sending online status for profile ${profileId}:`, error);
@@ -64,7 +116,7 @@ const authService = {
     },
 
     // New methods for profile-specific online status
-    startProfileOnlineHeartbeat(profileId, operatorId, token, cfClearance = null) {
+    async startProfileOnlineHeartbeat(profileId, operatorId, token, browserSession = null) {
         if (!profileId || !operatorId || !token) return;
         
         const intervalKey = `${profileId}-${operatorId}`;
@@ -77,21 +129,24 @@ const authService = {
         // Add to processing profiles set
         processingProfiles.add(profileId);
         
-        // Store cfClearance for this profile's heartbeat
-        if (cfClearance) {
-            profileOnlineIntervals.set(`${intervalKey}-cf`, cfClearance);
+        // Immediately send online status
+        try {
+            await this.sendOnlineStatus(operatorId, token, profileId, browserSession);
+        } catch (error) {
+            console.error(`[ONLINE STATUS] Initial heartbeat error for profile ${profileId}:`, error);
+            // Don't throw - just log the error and continue
         }
         
-        // Immediately send online status
-        this.sendOnlineStatus(operatorId, token, profileId, cfClearance);
-        
         // Set up periodic heartbeat every 1m50s (110,000 ms)
-        const interval = setInterval(() => {
+        const interval = setInterval(async () => {
             // Only send if profile is still processing
             if (processingProfiles.has(profileId)) {
-                // Get stored cfClearance for this profile
-                const storedCfClearance = profileOnlineIntervals.get(`${intervalKey}-cf`);
-                this.sendOnlineStatus(operatorId, token, profileId, storedCfClearance);
+                try {
+                    await this.sendOnlineStatus(operatorId, token, profileId, browserSession);
+                } catch (error) {
+                    console.error(`[ONLINE STATUS] Heartbeat error for profile ${profileId}:`, error);
+                    // Don't throw - just log the error and continue
+                }
             } else {
                 // Stop heartbeat if profile is no longer processing
                 this.stopProfileOnlineHeartbeat(profileId, operatorId);
@@ -108,8 +163,6 @@ const authService = {
         if (profileOnlineIntervals.has(intervalKey)) {
             clearInterval(profileOnlineIntervals.get(intervalKey));
             profileOnlineIntervals.delete(intervalKey);
-            // Clean up stored cfClearance
-            profileOnlineIntervals.delete(`${intervalKey}-cf`);
             console.log(`[ONLINE STATUS] Stopped online heartbeat for profile ${profileId}, operator ${operatorId}`);
         }
         
@@ -128,27 +181,385 @@ const authService = {
     },
 
     async authenticateWithAlphaDate(email, password) {
+        let browser = null;
         try {
-            console.log('[INFO] Attempting to authenticate with Alpha.Date API: https://alpha.date/api/login/login');
+            console.log('[INFO] Attempting to authenticate with Alpha.Date using Puppeteer with stealth plugin');
+            
+            // Launch browser with stealth settings
+            browser = await puppeteer.launch({
+                headless: false, // Avoid headless mode to reduce bot detection
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--disable-gpu',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding'
+                ]
+            });
+
+            const page = await browser.newPage();
+
+            // Set realistic user agent
+            await page.setUserAgent(
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            );
+
+            // Randomize viewport slightly to avoid fingerprinting
+            await page.setViewport({
+                width: Math.floor(1024 + Math.random() * 100),
+                height: Math.floor(768 + Math.random() * 100),
+            });
+
+            // Set additional headers to appear more human-like
+            await page.setExtraHTTPHeaders({
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            });
+
+            console.log('[INFO] Navigating to Alpha.Date login page...');
+            
+            // Navigate to the login page first to establish session
+            await page.goto('https://alpha.date/login', {
+                waitUntil: 'networkidle2',
+                timeout: 30000
+            });
+
+            // Wait a bit to let any initial scripts load
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Check for Cloudflare challenge
+            const cloudflareDetected = await this.checkForCloudflareChallenge(page);
+            if (cloudflareDetected) {
+                console.log('[INFO] Cloudflare challenge detected, waiting for manual resolution...');
+                
+                // Wait for user to manually solve the challenge
+                await this.waitForCloudflareResolution(page);
+            }
+
+            console.log('[INFO] Filling login form...');
+            
+            // Wait for login form to be available
+            await page.waitForSelector('input[name="login"], input[data-testid="email"]', { timeout: 10000 });
+            await page.waitForSelector('input[name="password"], input[data-testid="password"]', { timeout: 10000 });
+
+            // Fill in credentials with human-like delays
+            await page.type('input[name="login"], input[data-testid="email"]', email, { delay: 100 });
+            await new Promise(resolve => setTimeout(resolve, 500));
+            await page.type('input[name="password"], input[data-testid="password"]', password, { delay: 100 });
+
+            // Wait a bit before submitting
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Submit the form
+            await page.click('button[data-testid="submit-btn"], button[type="submit"], input[type="submit"]');
+            
+            console.log('[INFO] Login form submitted, waiting for response...');
+
+            // Wait for navigation or API response
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            // Check for captcha
+            const captchaDetected = await this.checkForCaptcha(page);
+            if (captchaDetected) {
+                console.log('[INFO] Captcha detected, waiting for manual resolution...');
+                await this.waitForCaptchaResolution(page);
+            }
+
+            // Try to extract token from localStorage or cookies
+            const token = await this.extractAuthToken(page);
+            
+            if (token) {
+                console.log('[INFO] Authentication successful via Puppeteer');
+                
+                // Get operator ID from the page or make an API call
+                const operatorId = await this.extractOperatorId(page, token);
+                
+                // Store browser session for future API calls
+                const browserSession = {
+                    browser: browser,
+                    page: page,
+                    token: token,
+                    operatorId: operatorId,
+                    createdAt: Date.now()
+                };
+                
+                // Don't close the browser - keep it alive for API calls
+                return {
+                    success: true,
+                    token: token,
+                    operatorId: operatorId,
+                    browserSession: browserSession,
+                    message: 'Authentication successful via Puppeteer'
+                };
+            } else {
+                // Fallback to API method
+                console.log('[INFO] Token not found in browser, trying API method...');
+                if (browser) {
+                    await browser.close();
+                }
+                return await this.authenticateWithAPI(email, password);
+            }
+
+        } catch (error) {
+            console.error('[ERROR] Puppeteer authentication error:', error);
+            
+            // Fallback to API method
+            console.log('[INFO] Falling back to API authentication method...');
+            if (browser) {
+                await browser.close();
+            }
+            return await this.authenticateWithAPI(email, password);
+        }
+    },
+
+    async checkForCloudflareChallenge(page) {
+        try {
+            const content = await page.content();
+            const cloudflareIndicators = [
+                'Just a moment...',
+                'cf-mitigated',
+                'cloudflare',
+                'DDoS protection',
+                'ray id',
+                'cf-ray',
+                'checking your browser',
+                'enable javascript',
+                'cf-browser-verification'
+            ];
+
+            return cloudflareIndicators.some(indicator => 
+                content.toLowerCase().includes(indicator.toLowerCase())
+            );
+        } catch (error) {
+            console.error('[ERROR] Error checking for Cloudflare challenge:', error);
+            return false;
+        }
+    },
+
+    async waitForCloudflareResolution(page) {
+        console.log('[INFO] Please manually solve the Cloudflare challenge in the browser window...');
+        
+        // Wait for the page to load successfully (indicating challenge was solved)
+        try {
+            await page.waitForFunction(() => {
+                return !document.body.innerHTML.includes('Just a moment') && 
+                       !document.body.innerHTML.includes('cf-mitigated') &&
+                       document.readyState === 'complete';
+            }, { timeout: 300000 }); // 5 minutes timeout
+            
+            console.log('[INFO] Cloudflare challenge appears to be resolved');
+        } catch (error) {
+            console.error('[ERROR] Timeout waiting for Cloudflare challenge resolution:', error);
+            throw new Error('Cloudflare challenge resolution timeout');
+        }
+    },
+
+    async checkForCaptcha(page) {
+        try {
+            const captchaSelectors = [
+                'iframe[src*="hcaptcha"]',
+                'iframe[src*="recaptcha"]',
+                'iframe[src*="captcha"]',
+                '.h-captcha',
+                '.g-recaptcha',
+                '#captcha',
+                '[class*="captcha"]'
+            ];
+
+            for (const selector of captchaSelectors) {
+                const element = await page.$(selector);
+                if (element) {
+                    console.log(`[INFO] Captcha detected with selector: ${selector}`);
+                    return true;
+                }
+            }
+
+            // Also check page content for captcha indicators
+            const content = await page.content();
+            const captchaIndicators = [
+                'hcaptcha',
+                'recaptcha',
+                'captcha',
+                'verify you are human',
+                'prove you are human'
+            ];
+
+            return captchaIndicators.some(indicator => 
+                content.toLowerCase().includes(indicator.toLowerCase())
+            );
+        } catch (error) {
+            console.error('[ERROR] Error checking for captcha:', error);
+            return false;
+        }
+    },
+
+    async waitForCaptchaResolution(page) {
+        console.log('[INFO] Please manually solve the captcha in the browser window...');
+        
+        // Wait for captcha to be solved (check for form submission or redirect)
+        try {
+            await page.waitForFunction(() => {
+                // Check if captcha elements are gone or if we've been redirected
+                const captchaElements = document.querySelectorAll('iframe[src*="captcha"], .h-captcha, .g-recaptcha');
+                return captchaElements.length === 0 || window.location.href.includes('/dashboard');
+            }, { timeout: 300000 }); // 5 minutes timeout
+            
+            console.log('[INFO] Captcha appears to be resolved');
+        } catch (error) {
+            console.error('[ERROR] Timeout waiting for captcha resolution:', error);
+            throw new Error('Captcha resolution timeout');
+        }
+    },
+
+    async extractAuthToken(page) {
+        try {
+            // Try to get token from localStorage
+            const token = await page.evaluate(() => {
+                return localStorage.getItem('token') || 
+                       localStorage.getItem('authToken') || 
+                       localStorage.getItem('accessToken') ||
+                       sessionStorage.getItem('token') ||
+                       sessionStorage.getItem('authToken') ||
+                       sessionStorage.getItem('accessToken');
+            });
+
+            if (token) {
+                console.log('[INFO] Token found in browser storage');
+                return token;
+            }
+
+            // Try to get token from cookies
+            const cookies = await page.cookies();
+            const tokenCookie = cookies.find(cookie => 
+                cookie.name.toLowerCase().includes('token') ||
+                cookie.name.toLowerCase().includes('auth')
+            );
+
+            if (tokenCookie) {
+                console.log('[INFO] Token found in cookies');
+                return tokenCookie.value;
+            }
+
+            // Try to extract from page content (if it's embedded in HTML)
+            const content = await page.content();
+            const tokenMatch = content.match(/"token"\s*:\s*"([^"]+)"/);
+            if (tokenMatch) {
+                console.log('[INFO] Token found in page content');
+                return tokenMatch[1];
+            }
+
+            return null;
+        } catch (error) {
+            console.error('[ERROR] Error extracting auth token:', error);
+            return null;
+        }
+    },
+
+    async extractOperatorId(page, token) {
+        try {
+            // Try to get operator ID from page content
+            const operatorId = await page.evaluate(() => {
+                // Look for operator ID in various places
+                const scripts = document.querySelectorAll('script');
+                for (const script of scripts) {
+                    const content = script.textContent;
+                    const match = content.match(/"operator_id"\s*:\s*"?(\d+)"?/);
+                    if (match) return match[1];
+                }
+                
+                // Check localStorage
+                return localStorage.getItem('operatorId') || 
+                       localStorage.getItem('operator_id') ||
+                       sessionStorage.getItem('operatorId') ||
+                       sessionStorage.getItem('operator_id');
+            });
+
+            if (operatorId) {
+                return operatorId;
+            }
+
+            // If not found, make an API call from within the browser session
+            console.log('[INFO] Making API call from browser session to get operator info...');
+            const operatorData = await this.makeApiCallFromBrowser(page, 'https://alpha.date/api/operator/info', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (operatorData && operatorData.operator_id) {
+                return operatorData.operator_id;
+            }
+
+            return null;
+        } catch (error) {
+            console.error('[ERROR] Error extracting operator ID:', error);
+            return null;
+        }
+    },
+
+    async makeApiCallFromBrowser(page, url, options = {}) {
+        try {
+            console.log(`[INFO] Making API call from browser: ${url}`);
+            
+            const result = await page.evaluate(async (url, options) => {
+                try {
+                    const response = await fetch(url, {
+                        method: options.method || 'GET',
+                        headers: options.headers || {},
+                        body: options.body ? JSON.stringify(options.body) : undefined
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    return { success: true, data };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            }, url, options);
+
+            if (result.success) {
+                console.log('[INFO] API call successful from browser');
+                return result.data;
+            } else {
+                console.error('[ERROR] API call failed from browser:', result.error);
+                return null;
+            }
+        } catch (error) {
+            console.error('[ERROR] Error making API call from browser:', error);
+            return null;
+        }
+    },
+
+    // Fallback API authentication method
+    async authenticateWithAPI(email, password) {
+        try {
+            console.log('[INFO] Attempting API authentication with Alpha.Date');
             
             const response = await fetch('https://alpha.date/api/login/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'application/json, text/plain, */*',
-                    'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
-                    'Accept-Encoding': 'gzip, deflate, br, zstd',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
                     'Connection': 'keep-alive',
                     'Sec-Fetch-Dest': 'empty',
                     'Sec-Fetch-Mode': 'cors',
-                    'Sec-Fetch-Site': 'same-origin',
-                    'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
-                    'Sec-CH-UA-Mobile': '?0',
-                    'Sec-CH-UA-Platform': '"macOS"',
-                    'Referer': 'https://alpha.date/login',
-                    'Origin': 'https://alpha.date',
-                    'Host': 'alpha.date'
+                    'Sec-Fetch-Site': 'same-origin'
                 },
                 body: JSON.stringify({
                     email: email,
@@ -159,7 +570,7 @@ const authService = {
             const contentType = response.headers.get('content-type') || '';
             const responseStatus = response.status;
 
-            console.log(`[INFO] Response status: ${responseStatus}, Content-Type: ${contentType}`);
+            console.log(`[INFO] API Response status: ${responseStatus}, Content-Type: ${contentType}`);
 
             // Get response body as text first
             const responseText = await response.text();
@@ -168,7 +579,7 @@ const authService = {
             const isCloudflareChallenge = this.detectCloudflareChallenge(responseStatus, contentType, responseText);
 
             if (isCloudflareChallenge) {
-                console.log('[ERROR] Cloudflare challenge detected');
+                console.log('[ERROR] Cloudflare challenge detected in API response');
                 
                 // Save the challenge page
                 const challengeFile = await this.saveCloudflareChallenge(responseText, email);
@@ -187,7 +598,7 @@ const authService = {
 
             // Check if response is OK
             if (!response.ok) {
-                console.log(`[ERROR] Authentication failed with status: ${responseStatus}`);
+                console.log(`[ERROR] API Authentication failed with status: ${responseStatus}`);
                 return {
                     success: false,
                     isCloudflareChallenge: false,
@@ -201,7 +612,7 @@ const authService = {
             try {
                 loginData = JSON.parse(responseText);
             } catch (parseError) {
-                console.log('[ERROR] Failed to parse response as JSON');
+                console.log('[ERROR] Failed to parse API response as JSON');
                 return {
                     success: false,
                     isCloudflareChallenge: false,
@@ -211,7 +622,7 @@ const authService = {
 
             // Validate required fields in response
             if (!loginData.token) {
-                console.log('[ERROR] No token in response');
+                console.log('[ERROR] No token in API response');
                 return {
                     success: false,
                     isCloudflareChallenge: false,
@@ -219,17 +630,17 @@ const authService = {
                 };
             }
 
-            console.log('[INFO] Alpha.Date authentication successful');
+            console.log('[INFO] Alpha.Date API authentication successful');
 
             return {
                 success: true,
                 token: loginData.token,
                 operatorId: loginData.operator_id,
-                message: 'Authentication successful'
+                message: 'Authentication successful via API'
             };
 
         } catch (error) {
-            console.error('[ERROR] Alpha.Date authentication error:', error);
+            console.error('[ERROR] Alpha.Date API authentication error:', error);
             return {
                 success: false,
                 isCloudflareChallenge: false,

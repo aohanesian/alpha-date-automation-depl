@@ -1,6 +1,8 @@
 // Modified chatController.js
 import express from 'express';
 import chatService from '../services/chatService.js';
+import browserSessionManager from '../services/browserSessionManager.js';
+import sessionAwareService from '../services/sessionAwareService.js';
 
 const router = express.Router();
 
@@ -30,9 +32,7 @@ function extractToken(req, res, next) {
                 req.token = sessionData.token;
                 req.userEmail = sessionData.email;
                 req.operatorId = sessionData.operatorId;
-                req.cfClearance = sessionData.cfClearance; // Store cfClearance from the session
                 console.log('Token from session store:', req.token, 'OperatorId:', req.operatorId);
-                console.log('cfClearance from session store:', req.cfClearance ? 'present' : 'missing');
                 return next();
             } else {
                 console.log('Session token not found or expired:', sessionToken);
@@ -77,18 +77,32 @@ router.get('/profiles', async (req, res) => {
             });
         }
 
-        console.log('=== CHAT CONTROLLER - GET PROFILES ===');
-        console.log('Session ID:', req.sessionID);
-        console.log('Session cfClearance:', req.session?.cfClearance ? 'present' : 'missing');
-        console.log('Session cfClearance value:', req.session?.cfClearance ? req.session.cfClearance.substring(0, 50) + '...' : 'null');
-        console.log('Token present:', !!req.token);
-        console.log('Operator ID:', req.operatorId);
-        console.log('cfClearance from session store:', req.cfClearance ? 'present' : 'missing');
-        console.log('cfClearance value from session store:', req.cfClearance ? req.cfClearance.substring(0, 50) + '...' : 'null');
+        // Try to get profiles using browser session first
+        let profiles = null;
         
-        // Use cfClearance from session store if available, otherwise fall back to current session
-        const cfClearance = req.cfClearance || req.session?.cfClearance;
-        const profiles = await chatService.getProfiles(req.token, cfClearance);
+        // Try to find browser session by session ID or email
+        const email = req.session.email;
+        console.log(`[CHAT] Looking for browser session for email: ${email}`);
+        
+        if (req.session.browserSession && req.session.browserSession.hasBrowserSession) {
+            console.log('[CHAT] Attempting to get profiles using browser session...');
+            profiles = await browserSessionManager.makeApiCall(
+                req.sessionID, 
+                'https://alpha.date/api/operator/profiles',
+                {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${req.token}` }
+                },
+                email
+            );
+        }
+        
+        // Fallback to direct API call if browser session failed
+        if (!profiles) {
+            console.log('[CHAT] Falling back to direct API call for profiles...');
+            const browserSession = sessionAwareService.getBrowserSession(req.sessionID, email);
+            profiles = await chatService.getProfiles(req.token, browserSession);
+        }
         res.json({ success: true, profiles });
     } catch (error) {
         console.error('Get profiles error:', error);
@@ -116,10 +130,12 @@ router.post('/start', async (req, res) => {
             });
         }
 
+        // Get browser session for this request
+        const email = req.session.email;
+        const browserSession = sessionAwareService.getBrowserSession(req.sessionID, email);
+        
         // Start chat processing in the background (non-blocking)
-        // Use cfClearance from session store if available, otherwise fall back to current session
-        const cfClearance = req.cfClearance || req.session?.cfClearance;
-        chatService.startProfileProcessing(profileId, messageTemplate, req.token, attachment, req.operatorId, cfClearance);
+        chatService.startProfileProcessing(profileId, messageTemplate, req.token, attachment, req.operatorId, browserSession);
 
         res.json({ success: true, message: 'Processing started' });
     } catch (error) {
@@ -176,7 +192,11 @@ router.get('/attachments/:profileId', async (req, res) => {
             return res.status(401).json({ success: false, message: 'Not authenticated' });
         }
 
-        const attachments = await chatService.getAttachments(profileId, token, forceRefresh === 'true');
+        // Get browser session for this request
+        const email = req.session.email;
+        const browserSession = sessionAwareService.getBrowserSession(req.sessionID, email);
+        
+        const attachments = await chatService.getAttachments(profileId, token, forceRefresh === 'true', browserSession);
         res.json({ success: true, attachments });
     } catch (error) {
         console.error('Get chat attachments error:', error);

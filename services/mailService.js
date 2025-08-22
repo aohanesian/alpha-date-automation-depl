@@ -11,69 +11,75 @@ const statusMessages = {};
 const invites = {};
 
 const mailService = {
-    async getProfiles(token, cfClearance = null) {
+    async getProfiles(token, page = null) {
         try {
-            const headers = {
-                'Authorization': `Bearer ${token}`,
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br, zstd',
-                'Connection': 'keep-alive',
-                'Sec-Fetch-Dest': 'empty',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'same-origin',
-                'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
-                'Sec-CH-UA-Mobile': '?0',
-                'Sec-CH-UA-Platform': '"macOS"',
-                'Referer': 'https://alpha.date/chat',
-                'X-Request-ID': `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`,
-                'Priority': 'u=1, i',
-                'If-None-Match': 'W/"91c-6VUTV2UY9CQJ1xEjB1CN+dzEAMY"',
-                // Additional headers from browser request
-                'Origin': 'https://alpha.date',
-                'Host': 'alpha.date'
-            };
-            
-            // Add cf_clearance cookie if available
-            if (cfClearance) {
-                headers['Cookie'] = `cf_clearance=${cfClearance}`;
+            if (page) {
+                // Make API call from browser session
+                console.log('[MAIL SERVICE] Getting profiles from browser session...');
+                const profilesData = await this.makeApiCallFromBrowser(page, 'https://alpha.date/api/operator/profiles', {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (profilesData) {
+                    return profilesData;
+                }
             }
-            
-            console.log('=== MAIL SERVICE - GET PROFILES REQUEST ===');
-            console.log('URL:', 'https://alpha.date/api/operator/profiles');
-            console.log('Token (first 50 chars):', token ? token.substring(0, 50) + '...' : 'null');
-            console.log('cfClearance provided:', !!cfClearance);
-            console.log('cfClearance value:', cfClearance ? cfClearance.substring(0, 50) + '...' : 'null');
-            console.log('All Headers:', JSON.stringify(headers, null, 2));
-            
+
+            // Fallback to direct API call
+            console.log('[MAIL SERVICE] Getting profiles via direct API call...');
             const response = await fetch('https://alpha.date/api/operator/profiles', {
-                headers: headers
+                headers: { 'Authorization': `Bearer ${token}` }
             });
 
-            console.log('=== MAIL SERVICE - RESPONSE INFO ===');
-            console.log('Status:', response.status);
-            console.log('Status Text:', response.statusText);
-            console.log('Response Headers:', Object.fromEntries(response.headers.entries()));
-            
             if (!response.ok) {
-                const responseText = await response.text();
-                console.log('Error Response Body:', responseText.substring(0, 500));
                 throw new Error(`Failed to load profiles: ${response.statusText}`);
             }
 
-            const data = await response.json();
-            console.log('=== MAIL SERVICE - SUCCESS ===');
-            console.log('Profiles count:', data.length || 'unknown');
-            return data;
+            return await response.json();
         } catch (error) {
-            console.error('=== MAIL SERVICE - ERROR ===');
             console.error('Profile loading failed:', error);
             throw error;
         }
     },
 
-    async getAttachments(profileId, token, forceRefresh = false) {
+    async makeApiCallFromBrowser(page, url, options = {}) {
+        try {
+            console.log(`[MAIL SERVICE] Making API call from browser: ${url}`);
+            
+            const result = await page.evaluate(async (url, options) => {
+                try {
+                    const response = await fetch(url, {
+                        method: options.method || 'GET',
+                        headers: options.headers || {},
+                        body: options.body ? JSON.stringify(options.body) : undefined
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    return { success: true, data };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            }, url, options);
+
+            if (result.success) {
+                console.log('[MAIL SERVICE] API call successful from browser');
+                return result.data;
+            } else {
+                console.error('[MAIL SERVICE] API call failed from browser:', result.error);
+                return null;
+            }
+        } catch (error) {
+            console.error('[MAIL SERVICE] Error making API call from browser:', error);
+            return null;
+        }
+    },
+
+    async getAttachments(profileId, token, forceRefresh = false, browserSession = null) {
         if (!forceRefresh && attachmentsCache.has(profileId)) {
             return attachmentsCache.get(profileId);
         }
@@ -83,16 +89,38 @@ const mailService = {
             const types = ['images', 'videos', 'audios'];
 
             for (const type of types) {
-                const response = await fetch(
-                    `https://alpha.date/api/files/${type}?external_id=${profileId}`,
-                    { headers: { 'Authorization': `Bearer ${token}` } }
-                );
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                let data = null;
+                
+                // Try browser session first if available
+                if (browserSession && browserSession.page) {
+                    try {
+                        console.log(`[MAIL SERVICE] Getting ${type} via browser session for profile ${profileId}...`);
+                        data = await this.makeApiCallFromBrowser(
+                            browserSession.page,
+                            `https://alpha.date/api/files/${type}?external_id=${profileId}`,
+                            {
+                                method: 'GET',
+                                headers: { 'Authorization': `Bearer ${token}` }
+                            }
+                        );
+                    } catch (browserError) {
+                        console.log(`[MAIL SERVICE] Browser session failed for ${type}, falling back to direct API...`);
+                    }
                 }
+                
+                // Fallback to direct API call
+                if (!data) {
+                    const response = await fetch(
+                        `https://alpha.date/api/files/${type}?external_id=${profileId}`,
+                        { headers: { 'Authorization': `Bearer ${token}` } }
+                    );
 
-                const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    data = await response.json();
+                }
 
                 // Look for folder from environment variable (default: "send")
                 if (data.folders && typeof data.folders === 'object') {
@@ -123,7 +151,7 @@ const mailService = {
         }
     },
 
-    async startProcessing(profileId, message, attachmentsList, token, operatorId = null) {
+    async startProcessing(profileId, message, attachmentsList, token, operatorId = null, browserSession = null) {
         if (processingProfiles.has(profileId)) {
             return;
         }
@@ -135,13 +163,16 @@ const mailService = {
         processingProfiles.add(profileId);
         this.setProfileStatus(profileId, 'processing');
 
-        // Start profile-specific online heartbeat
+        // Start profile-specific online heartbeat with browser session
         // Use provided operatorId or extract from token
         const finalOperatorId = operatorId || this.extractOperatorIdFromToken(token) || 'default';
-        authService.startProfileOnlineHeartbeat(profileId, finalOperatorId, token);
+        authService.startProfileOnlineHeartbeat(profileId, finalOperatorId, token, browserSession)
+            .catch(error => {
+                console.error(`[MAIL SERVICE] Failed to start heartbeat for profile ${profileId}:`, error);
+            });
 
         // Start processing in a non-blocking way
-        this.processMailsForProfile(profileId, message, attachmentsList, token, controller)
+        this.processMailsForProfile(profileId, message, attachmentsList, token, controller, browserSession)
             .catch(error => {
                 console.error(`Mail processing error for profile ${profileId}:`, error);
                 this.setProfileStatus(profileId, `Error: ${error.message}`);
@@ -149,7 +180,7 @@ const mailService = {
             });
     },
 
-    async processMailsForProfile(profileId, message, attachmentsList, token, controller) {
+    async processMailsForProfile(profileId, message, attachmentsList, token, controller, browserSession = null) {
         try {
             while (true) {
                 if (controller.signal.aborted) {
@@ -159,7 +190,7 @@ const mailService = {
 
                 // First, fetch all available chats from all pages
                 this.setProfileStatus(profileId, 'processing');
-                const allChats = await this.fetchAllChanceChats(profileId, token, controller.signal);
+                const allChats = await this.fetchAllChanceChats(profileId, token, controller.signal, browserSession);
 
                 if (controller.signal.aborted) break;
 
@@ -186,7 +217,7 @@ const mailService = {
 
                 // --- Batch fetch last messages ---
                 const chatUids = availableChats.map(chat => chat.chat_uid);
-                const lastMessagesMap = await this.fetchLastMessages(chatUids, token);
+                const lastMessagesMap = await this.fetchLastMessages(chatUids, token, browserSession);
 
                 // Debug logs
                 console.log('[availableChats]:', availableChats.map(chat => chat.chat_uid));
@@ -213,7 +244,7 @@ const mailService = {
                 }
 
                 try {
-                    const result = await this.sendMail(profileId, recipientIds, message, attachmentsList, token);
+                    const result = await this.sendMail(profileId, recipientIds, message, attachmentsList, token, browserSession);
 
                     // Handle different response types
                     if (result.success) {
@@ -244,7 +275,7 @@ const mailService = {
         }
     },
 
-    async fetchAllChanceChats(profileId, token, signal) {
+    async fetchAllChanceChats(profileId, token, signal, browserSession = null) {
         const allChats = [];
         let page = 1;
 
@@ -257,6 +288,54 @@ const mailService = {
                 console.log(`Fetching mail chats page ${page} for profile ${profileId}...`);
 
                 let response;
+                let browserData;
+                
+                // Try browser session first if available
+                if (browserSession && browserSession.page) {
+                    try {
+                        console.log(`[MAIL SERVICE] Fetching mail chats via browser session for profile ${profileId}...`);
+                        browserData = await this.makeApiCallFromBrowser(
+                            browserSession.page,
+                            'https://alpha.date/api/chatList/chatListByUserID',
+                            {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: {
+                                    user_id: profileId,
+                                    chat_uid: false,
+                                    page: page,
+                                    freeze: true,
+                                    limits: 2,
+                                    ONLINE_STATUS: 1,
+                                    SEARCH: "",
+                                    CHAT_TYPE: "CHANCE"
+                                }
+                            }
+                        );
+                        
+                        if (browserData) {
+                            console.log(`[MAIL SERVICE] Successfully fetched mail chats via browser for profile ${profileId}`);
+                            const pageChats = browserData.response || [];
+                            
+                            if (pageChats.length === 0) {
+                                console.log(`No more mail chats found at page ${page}. Total fetched: ${allChats.length}`);
+                                break;
+                            }
+                            
+                            allChats.push(...pageChats);
+                            console.log(`Fetched ${pageChats.length} mail chats from page ${page}. Total: ${allChats.length}`);
+                            page++;
+                            continue;
+                        }
+                    } catch (browserError) {
+                        console.log(`[MAIL SERVICE] Browser session failed for mail chats, falling back to direct API...`);
+                    }
+                }
+                
+                // Fallback to direct API call
                 try {
                     response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
                         method: 'POST',
@@ -360,11 +439,45 @@ const mailService = {
     },
 
     // Batch fetch last messages for all chatUids
-    async fetchLastMessages(chatUids, token) {
+    async fetchLastMessages(chatUids, token, browserSession = null) {
         console.log('[fetchLastMessages called]');
         if (!Array.isArray(chatUids) || chatUids.length === 0) return {};
         try {
             let response;
+            let data;
+            
+            // Try browser session first if available
+            if (browserSession && browserSession.page) {
+                try {
+                    console.log(`[MAIL SERVICE] Fetching last messages via browser session...`);
+                    data = await this.makeApiCallFromBrowser(
+                        browserSession.page,
+                        'https://alpha.date/api/chatList/lastMessage',
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: { chat_uid: chatUids }
+                        }
+                    );
+                    
+                    if (data) {
+                        console.log(`[MAIL SERVICE] Successfully fetched last messages via browser`);
+                        console.log('[LAST MESSAGE BATCH]:', data);
+                        const map = {};
+                        for (const msg of data.response) {
+                            map[msg.chat_uid] = msg;
+                        }
+                        return map;
+                    }
+                } catch (browserError) {
+                    console.log(`[MAIL SERVICE] Browser session failed for last messages, falling back to direct API...`);
+                }
+            }
+            
+            // Fallback to direct API call
             try {
                 response = await fetch('https://alpha.date/api/chatList/lastMessage', {
                     method: 'POST',
@@ -378,7 +491,7 @@ const mailService = {
                 // Network or timeout error (e.g., 524)
                 console.error('Network error or timeout in fetchLastMessages:', err);
                 await this.delay(50000);
-                return await this.fetchLastMessages(chatUids, token); // retry
+                return await this.fetchLastMessages(chatUids, token, browserSession); // retry
             }
 
             if (response.status === 401) {
@@ -389,14 +502,14 @@ const mailService = {
             if (response.status === 524) {
                 console.error('524 Timeout in fetchLastMessages. Waiting and retrying...');
                 await this.delay(50000);
-                return await this.fetchLastMessages(chatUids, token); // retry
+                return await this.fetchLastMessages(chatUids, token, browserSession); // retry
             }
 
             if (!response.ok) throw new Error('Failed to fetch last messages');
-            const data = await response.json();
-            console.log('[LAST MESSAGE BATCH]:', data);
+            const apiData = await response.json();
+            console.log('[LAST MESSAGE BATCH]:', apiData);
             const map = {};
-            for (const msg of data.response) {
+            for (const msg of apiData.response) {
                 map[msg.chat_uid] = msg;
             }
             return map;
@@ -406,7 +519,7 @@ const mailService = {
         }
     },
 
-    async sendMail(profileId, recipientIds, message, attachments, token) {
+    async sendMail(profileId, recipientIds, message, attachments, token, browserSession = null) {
         // Format attachments according to API requirements
         const formattedAttachments = attachments.map(attachment => {
             if (!attachment || !attachment.filename || !attachment.link) {
@@ -441,7 +554,57 @@ const mailService = {
                 is_send_email: false
             };
 
-            const mailResponse = await fetch('https://alpha.date/api/mailbox/mail', {
+            let mailResponse;
+            let mailData;
+            
+            // Try browser session first if available
+            if (browserSession && browserSession.page) {
+                try {
+                    console.log(`[MAIL SERVICE] Sending mail via browser session...`);
+                    mailData = await this.makeApiCallFromBrowser(
+                        browserSession.page,
+                        'https://alpha.date/api/mailbox/mail',
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: payload
+                        }
+                    );
+                    
+                    if (mailData) {
+                        console.log(`[MAIL SERVICE] Successfully sent mail via browser`);
+                        console.log('[MAIL RESPONSE: ', mailData);
+                        
+                        // Handle API-level errors
+                        const hasRestrictionError = (blockReason) => blockReason.reason === "Restriction of sending a personal letter. Try when the list becomes active";
+                        
+                        // Add to block list all except those with restriction error
+                        const blockedExternalIds = (mailData.blocked_ids || []);
+                        const blockReasons = (mailData.blockReasons || []);
+                        
+                        // Process blocked recipients
+                        for (let i = 0; i < recipientIds.length; i++) {
+                            const recipientId = recipientIds[i];
+                            const isBlocked = blockedExternalIds.includes(recipientId);
+                            const blockReason = blockReasons.find(reason => reason.external_id === recipientId);
+                            
+                            if (isBlocked && !hasRestrictionError(blockReason)) {
+                                this.addToBlockList(profileId, recipientId);
+                            }
+                        }
+                        
+                        return { success: true };
+                    }
+                } catch (browserError) {
+                    console.log(`[MAIL SERVICE] Browser session failed for mail, falling back to direct API...`);
+                }
+            }
+            
+            // Fallback to direct API call
+            mailResponse = await fetch('https://alpha.date/api/mailbox/mail', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -450,7 +613,7 @@ const mailService = {
                 body: JSON.stringify(payload)
             });
 
-            const mailData = await mailResponse.json();
+            mailData = await mailResponse.json();
             const hasRestrictionError = (blockReason) => blockReason.reason === "Restriction of sending a personal letter. Try when the list becomes active";
 
             if (mailResponse.ok) {
@@ -481,7 +644,7 @@ const mailService = {
                 // Timeout - wait and retry
                 console.error('524 Timeout in sendMail. Waiting and retrying...');
                 await this.delay(50000);
-                return await this.sendMail(profileId, recipientIds, message, attachments, token);
+                return await this.sendMail(profileId, recipientIds, message, attachments, token, browserSession);
             }
 
             if (mailResponse.status === 400 || mailResponse.status === 401 || (mailData.error && mailData.error.toLowerCase() === "not your profile")) {

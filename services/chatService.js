@@ -12,71 +12,82 @@ const invites = {};
 
 
 const chatService = {
-    async getProfiles(token, cfClearance = null) {
+    async getProfiles(token, browserSession = null) {
         try {
-            const headers = {
-                'Authorization': `Bearer ${token}`,
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br, zstd',
-                'Connection': 'keep-alive',
-                'Sec-Fetch-Dest': 'empty',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'same-origin',
-                'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
-                'Sec-CH-UA-Mobile': '?0',
-                'Sec-CH-UA-Platform': '"macOS"',
-                'Referer': 'https://alpha.date/chance',
-                'Priority': 'u=1, i',
-                'If-None-Match': 'W/"1023-mcdlNvAI+sUhnrLlY5DhWG5ONco"',
-                'X-Request-ID': `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`,
-                'Origin': 'https://alpha.date',
-                'Host': 'alpha.date'
-            };
-            
-            // Add cf_clearance cookie if available
-            if (cfClearance) {
-                headers['Cookie'] = `cf_clearance=${cfClearance}`;
-                console.log('[DEBUG] Adding cf_clearance cookie to getProfiles request');
-            } else {
-                console.log('[DEBUG] No cf_clearance cookie available for getProfiles request');
+            // Try browser session first if available
+            if (browserSession && browserSession.page) {
+                try {
+                    console.log('[CHAT SERVICE] Getting profiles via browser session...');
+                    const result = await this.makeApiCallFromBrowser(
+                        browserSession.page,
+                        'https://alpha.date/api/operator/profiles',
+                        {
+                            method: 'GET',
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        }
+                    );
+                    
+                    if (result) {
+                        return result;
+                    }
+                } catch (browserError) {
+                    console.log('[CHAT SERVICE] Browser session failed, falling back to direct API...');
+                }
             }
-            
-            console.log('=== CHAT SERVICE - GET PROFILES REQUEST ===');
-            console.log('URL:', 'https://alpha.date/api/operator/profiles');
-            console.log('Token (first 50 chars):', token ? token.substring(0, 50) + '...' : 'null');
-            console.log('cfClearance provided:', !!cfClearance);
-            console.log('cfClearance value:', cfClearance ? cfClearance.substring(0, 50) + '...' : 'null');
-            console.log('All Headers:', JSON.stringify(headers, null, 2));
-            
+
+            // Fallback to direct API call
             const response = await fetch('https://alpha.date/api/operator/profiles', {
-                headers: headers
+                headers: { 'Authorization': `Bearer ${token}` }
             });
 
-            console.log('=== CHAT SERVICE - RESPONSE INFO ===');
-            console.log('Status:', response.status);
-            console.log('Status Text:', response.statusText);
-            console.log('Response Headers:', Object.fromEntries(response.headers.entries()));
-            
             if (!response.ok) {
-                const responseText = await response.text();
-                console.log('Error Response Body:', responseText.substring(0, 500));
                 throw new Error(`Failed to load profiles: ${response.statusText}`);
             }
 
-            const data = await response.json();
-            console.log('=== CHAT SERVICE - SUCCESS ===');
-            console.log('Profiles count:', data.length || 'unknown');
-            return data;
+            return await response.json();
         } catch (error) {
-            console.error('=== CHAT SERVICE - ERROR ===');
             console.error('Profile loading failed:', error);
             throw error;
         }
     },
 
-    async startProfileProcessing(profileId, messageTemplate, token, attachment = null, operatorId = null, cfClearance = null) {
+    async makeApiCallFromBrowser(page, url, options = {}) {
+        try {
+            console.log(`[CHAT SERVICE] Making API call from browser: ${url}`);
+            
+            const result = await page.evaluate(async (url, options) => {
+                try {
+                    const response = await fetch(url, {
+                        method: options.method || 'GET',
+                        headers: options.headers || {},
+                        body: options.body ? JSON.stringify(options.body) : undefined
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    return { success: true, data };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            }, url, options);
+
+            if (result.success) {
+                console.log('[CHAT SERVICE] API call successful from browser');
+                return result.data;
+            } else {
+                console.error('[CHAT SERVICE] API call failed from browser:', result.error);
+                return null;
+            }
+        } catch (error) {
+            console.error('[CHAT SERVICE] Error making API call from browser:', error);
+            return null;
+        }
+    },
+
+    async startProfileProcessing(profileId, messageTemplate, token, attachment = null, operatorId = null, browserSession = null) {
         if (processingProfiles.has(profileId)) {
             return;
         }
@@ -88,13 +99,16 @@ const chatService = {
         processingProfiles.add(profileId);
         this.setProfileStatus(profileId, 'processing');
 
-        // Start profile-specific online heartbeat
+        // Start profile-specific online heartbeat with browser session
         // Use provided operatorId or extract from token
         const finalOperatorId = operatorId || this.extractOperatorIdFromToken(token) || 'default';
-        authService.startProfileOnlineHeartbeat(profileId, finalOperatorId, token, cfClearance);
+        authService.startProfileOnlineHeartbeat(profileId, finalOperatorId, token, browserSession)
+            .catch(error => {
+                console.error(`[CHAT SERVICE] Failed to start heartbeat for profile ${profileId}:`, error);
+            });
 
         // Start processing in a non-blocking way
-        this.processChatsForProfile(profileId, messageTemplate, token, controller, attachment, cfClearance)
+        this.processChatsForProfile(profileId, messageTemplate, token, controller, attachment, browserSession)
             .catch(error => {
                 console.error(`Chat processing error for profile ${profileId}:`, error);
                 this.setProfileStatus(profileId, `Error: ${error.message}`);
@@ -102,7 +116,7 @@ const chatService = {
             });
     },
 
-    async processChatsForProfile(profileId, messageTemplate, token, controller, attachment = null, cfClearance = null) {
+    async processChatsForProfile(profileId, messageTemplate, token, controller, attachment = null, browserSession = null) {
         try {
             while (true) {
                 if (controller.signal.aborted) {
@@ -112,7 +126,7 @@ const chatService = {
 
                 // First, fetch all available chats from all pages
                 this.setProfileStatus(profileId, 'processing');
-                const allChats = await this.fetchAllChanceChats(profileId, token, controller.signal, cfClearance);
+                const allChats = await this.fetchAllChanceChats(profileId, token, controller.signal, browserSession);
 
                 if (controller.signal.aborted) break;
 
@@ -140,7 +154,7 @@ const chatService = {
 
                 // --- Batch fetch last messages ---
                 const chatUids = availableChats.map(chat => chat.chat_uid);
-                const lastMessagesMap = await this.fetchLastMessages(chatUids, token, cfClearance);
+                const lastMessagesMap = await this.fetchLastMessages(chatUids, token, browserSession);
 
                 let sent = 0;
                 let skipped = 0;
@@ -170,13 +184,13 @@ const chatService = {
                     try {
                         // If attachment is provided, send it first
                         if (attachment) {
-                            const attachmentResult = await this.sendAttachmentMessage(profileId, recipientId, attachment, token, cfClearance);
+                            const attachmentResult = await this.sendAttachmentMessage(profileId, recipientId, attachment, token, browserSession);
                             if (!attachmentResult.success) {
                                 skipped++;
                                 continue;
                             }
                         }
-                        const result = await this.sendFollowUpMessage(profileId, recipientId, messageTemplate, token, cfClearance);
+                        const result = await this.sendFollowUpMessage(profileId, recipientId, messageTemplate, token, browserSession);
 
                         // Handle different response types
                         if (result.success) {
@@ -220,7 +234,7 @@ const chatService = {
         }
     },
 
-    async fetchAllChanceChats(profileId, token, signal, cfClearance = null) {
+    async fetchAllChanceChats(profileId, token, signal, browserSession = null) {
         const allChats = [];
         let page = 1;
 
@@ -233,58 +247,61 @@ const chatService = {
                 console.log(`Fetching chat page ${page} for profile ${profileId}...`);
 
                 let response;
-                try {
-                    const headers = {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                        'Accept': 'application/json, text/plain, */*',
-                        'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
-                        'Accept-Encoding': 'gzip, deflate, br, zstd',
-                        'Connection': 'keep-alive',
-                        'Sec-Fetch-Dest': 'empty',
-                        'Sec-Fetch-Mode': 'cors',
-                        'Sec-Fetch-Site': 'same-origin',
-                        'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
-                        'Sec-CH-UA-Mobile': '?0',
-                        'Sec-CH-UA-Platform': '"macOS"',
-                        'Referer': 'https://alpha.date/chance',
-                        'Origin': 'https://alpha.date',
-                        'Host': 'alpha.date',
-                        'Priority': 'u=1, i',
-                        'X-Request-ID': `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`
-                    };
-                    
-                    // Add cf_clearance cookie if available
-                    if (cfClearance) {
-                        headers['Cookie'] = `cf_clearance=${cfClearance}`;
-                        console.log('[DEBUG] Adding cf_clearance cookie to fetchAllChanceChats request');
-                    } else {
-                        console.log('[DEBUG] No cf_clearance cookie available for fetchAllChanceChats request');
+                let browserData;
+                
+                // Try browser session first if available
+                if (browserSession && browserSession.page) {
+                    try {
+                        console.log(`[CHAT SERVICE] Fetching chats via browser session for profile ${profileId}...`);
+                        browserData = await this.makeApiCallFromBrowser(
+                            browserSession.page,
+                            'https://alpha.date/api/chatList/chatListByUserID',
+                            {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: {
+                                    user_id: profileId,
+                                    chat_uid: false,
+                                    page: page,
+                                    freeze: true,
+                                    limits: 1,
+                                    ONLINE_STATUS: 1,
+                                    SEARCH: "",
+                                    CHAT_TYPE: "CHANCE"
+                                }
+                            }
+                        );
+                        
+                        if (browserData) {
+                            console.log(`[CHAT SERVICE] Successfully fetched chats via browser for profile ${profileId}`);
+                            const pageChats = browserData.response || [];
+                            
+                            if (pageChats.length === 0) {
+                                console.log(`No more chats found at page ${page}. Total fetched: ${allChats.length}`);
+                                break;
+                            }
+                            
+                            allChats.push(...pageChats);
+                            console.log(`Fetched ${pageChats.length} chats from page ${page}. Total: ${allChats.length}`);
+                            page++;
+                            continue;
+                        }
+                    } catch (browserError) {
+                        console.log(`[CHAT SERVICE] Browser session failed for chats, falling back to direct API...`);
                     }
-                    
-                    console.log('\n=== CHAT REQUEST DEBUG ===');
-                    console.log('Request URL: https://alpha.date/api/chatList/chatListByUserID');
-                    console.log('Request method: POST');
-                    console.log('Request body:', JSON.stringify({
-                        user_id: profileId,
-                        chat_uid: false,
-                        page: page,
-                        freeze: true,
-                        limits: 1,
-                        ONLINE_STATUS: 1,
-                        SEARCH: "",
-                        CHAT_TYPE: "CHANCE"
-                    }, null, 2));
-                    console.log('Request headers:');
-                    Object.entries(headers).forEach(([key, value]) => {
-                        console.log(`${key}: ${value}`);
-                    });
-                    console.log('=== END CHAT REQUEST DEBUG ===\n');
-                    
+                }
+                
+                // Fallback to direct API call
+                try {
                     response = await fetch('https://alpha.date/api/chatList/chatListByUserID', {
                         method: 'POST',
-                        headers: headers,
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
                         body: JSON.stringify({
                             user_id: profileId,
                             chat_uid: false,
@@ -297,15 +314,6 @@ const chatService = {
                         }),
                         signal
                     });
-                    
-                    console.log('\n=== CHAT RESPONSE DEBUG ===');
-                    console.log('Response status:', response.status);
-                    console.log('Response status text:', response.statusText);
-                    console.log('Response headers:');
-                    response.headers.forEach((value, key) => {
-                        console.log(`${key}: ${value}`);
-                    });
-                    console.log('=== END CHAT RESPONSE DEBUG ===\n');
                 } catch (err) {
                     // Network or timeout error (e.g., 524)
                     console.error(`Network error or timeout fetching chats for profile ${profileId}:`, err);
@@ -381,52 +389,59 @@ const chatService = {
     },
 
     // Batch fetch last messages for all chatUids
-    async fetchLastMessages(chatUids, token, cfClearance = null) {
+    async fetchLastMessages(chatUids, token, browserSession = null) {
         console.log('[fetchLastMessages called]');
         if (!Array.isArray(chatUids) || chatUids.length === 0) return {};
         try {
             let response;
-            try {
-                const headers = {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                    'Accept': 'application/json, text/plain, */*',
-                    'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
-                    'Accept-Encoding': 'gzip, deflate, br, zstd',
-                    'Connection': 'keep-alive',
-                    'Sec-Fetch-Dest': 'empty',
-                    'Sec-Fetch-Mode': 'cors',
-                    'Sec-Fetch-Site': 'same-origin',
-                    'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
-                    'Sec-CH-UA-Mobile': '?0',
-                    'Sec-CH-UA-Platform': '"macOS"',
-                    'Referer': 'https://alpha.date/chance',
-                    'Origin': 'https://alpha.date',
-                    'Host': 'alpha.date',
-                    'X-Request-ID': `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`
-                };
-                
-                // Add cf_clearance cookie if available
-                if (cfClearance) {
-                    headers['Cookie'] = `cf_clearance=${cfClearance}`;
-                    console.log('[DEBUG] Adding cf_clearance cookie to fetchLastMessages request');
-                } else {
-                    console.log('[DEBUG] No cf_clearance cookie available for fetchLastMessages request');
+            let data;
+            
+            // Try browser session first if available
+            if (browserSession && browserSession.page) {
+                try {
+                    console.log(`[CHAT SERVICE] Fetching last messages via browser session...`);
+                    data = await this.makeApiCallFromBrowser(
+                        browserSession.page,
+                        'https://alpha.date/api/chatList/lastMessage',
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: { chat_uid: chatUids }
+                        }
+                    );
+                    
+                    if (data) {
+                        console.log(`[CHAT SERVICE] Successfully fetched last messages via browser`);
+                        console.log('[LAST MESSAGE BATCH]:', data);
+                        const map = {};
+                        for (const msg of data.response) {
+                            map[msg.chat_uid] = msg;
+                        }
+                        return map;
+                    }
+                } catch (browserError) {
+                    console.log(`[CHAT SERVICE] Browser session failed for last messages, falling back to direct API...`);
                 }
-                
+            }
+            
+            // Fallback to direct API call
+            try {
                 response = await fetch('https://alpha.date/api/chatList/lastMessage', {
                     method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify({ 
-                        chat_uid: chatUids
-                    })
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ chat_uid: chatUids })
                 });
             } catch (err) {
                 // Network or timeout error (e.g., 524)
                 console.error('Network error or timeout in fetchLastMessages:', err);
                 await this.delay(50000);
-                return await this.fetchLastMessages(chatUids, token, cfClearance); // retry
+                return await this.fetchLastMessages(chatUids, token, browserSession); // retry
             }
 
             if (response.status === 401) {
@@ -437,14 +452,14 @@ const chatService = {
             if (response.status === 524) {
                 console.error('524 Timeout in fetchLastMessages. Waiting and retrying...');
                 await this.delay(50000);
-                return await this.fetchLastMessages(chatUids, token, cfClearance); // retry
+                return await this.fetchLastMessages(chatUids, token, browserSession); // retry
             }
 
             if (!response.ok) throw new Error('Failed to fetch last messages');
-            const data = await response.json();
-            console.log('[LAST MESSAGE BATCH]:', data);
+            const apiData = await response.json();
+            console.log('[LAST MESSAGE BATCH]:', apiData);
             const map = {};
-            for (const msg of data.response) {
+            for (const msg of apiData.response) {
                 map[msg.chat_uid] = msg;
             }
             return map;
@@ -454,7 +469,7 @@ const chatService = {
         }
     },
 
-    async sendAttachmentMessage(senderId, recipientId, attachment, token, cfClearance = null) {
+    async sendAttachmentMessage(senderId, recipientId, attachment, token, browserSession = null) {
         console.log('[ATTACHMENT: ]: ', attachment)
         // Determine message_type and content based on attachment type
         let message_type = '';
@@ -483,54 +498,71 @@ const chatService = {
         };
 
         try {
-            const headers = {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br, zstd',
-                'Connection': 'keep-alive',
-                'Sec-Fetch-Dest': 'empty',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'same-origin',
-                'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
-                'Sec-CH-UA-Mobile': '?0',
-                'Sec-CH-UA-Platform': '"macOS"',
-                'Referer': 'https://alpha.date/chat',
-                'Origin': 'https://alpha.date',
-                'Host': 'alpha.date'
-            };
+            let response;
+            let messageData;
             
-            // Add cf_clearance cookie if available
-            if (cfClearance) {
-                headers['Cookie'] = `cf_clearance=${cfClearance}`;
-                console.log('[DEBUG] Adding cf_clearance cookie to sendAttachmentMessage request');
-            } else {
-                console.log('[DEBUG] No cf_clearance cookie available for sendAttachmentMessage request');
+            // Try browser session first if available
+            if (browserSession && browserSession.page) {
+                try {
+                    console.log(`[CHAT SERVICE] Sending attachment message via browser session...`);
+                    messageData = await this.makeApiCallFromBrowser(
+                        browserSession.page,
+                        'https://alpha.date/api/chat/message',
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: payload
+                        }
+                    );
+                    
+                    if (messageData) {
+                        console.log(`[CHAT SERVICE] Successfully sent attachment message via browser`);
+                        const hasRestrictionError = messageData.error === "Restriction of sending a personal message. Try when the list becomes active";
+                        
+                        console.log('[DEBUG LIKES] ' + JSON.stringify(messageData) + ' for man ID ' + recipientId);
+                        
+                        // Handle API-level errors
+                        if (hasRestrictionError) {
+                            // Restriction error - skip this recipient but don't add to block list
+                            return {
+                                success: false,
+                                error: 'Recipient restriction'
+                            };
+                        }
+                        
+                        // Success - add to block list to avoid sending again
+                        this.addToBlockList(senderId, recipientId);
+                        return { success: true };
+                    }
+                } catch (browserError) {
+                    console.log(`[CHAT SERVICE] Browser session failed for attachment message, falling back to direct API...`);
+                }
             }
             
-            // Update referrer for message sending
-            headers['Referer'] = 'https://alpha.date/chance';
-            headers['X-Request-ID'] = `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`;
-            
-            const response = await fetch('https://alpha.date/api/chat/message', {
+            // Fallback to direct API call
+            response = await fetch('https://alpha.date/api/chat/message', {
                 method: 'POST',
-                headers: headers,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify(payload)
             });
 
-            const messageData = await response.json();
-            const hasRestrictionError = messageData.error === "Restriction of sending a personal message. Try when the list becomes active";
+            const apiMessageData = await response.json();
+            const hasRestrictionError = apiMessageData.error === "Restriction of sending a personal message. Try when the list becomes active";
 
-            console.log('[DEBUG LIKES] ' + JSON.stringify(messageData) + ' for man ID ' + recipientId)
+            console.log('[DEBUG LIKES] ' + JSON.stringify(apiMessageData) + ' for man ID ' + recipientId)
 
             // Handle different HTTP status codes
             if (response.status === 429) {
                 // Rate limited - wait and retry
                 console.error('429 Rate limited in sendAttachmentMessage. Waiting and retrying...');
                 await this.delay(50000);
-                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token, cfClearance);
+                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token, browserSession);
             }
 
             if (response.status === 401) {
@@ -543,20 +575,20 @@ const chatService = {
                 };
             }
 
-            if (response.status === 400 || response.status === 401 || messageData.error === "Not your profile") {
+            if (response.status === 400 || response.status === 401 || apiMessageData.error === "Not your profile") {
                 // Fatal errors - stop processing entirely
                 return {
                     success: false,
                     shouldStop: true,
-                    error: `Fatal error: ${response.status} - ${messageData.error || response.statusText}`
+                    error: `Fatal error: ${response.status} - ${apiMessageData.error || response.statusText}`
                 };
             }
 
             if (response.status === 524) {
                 // Timeout - wait and retry
-                console.error('524 Timeout in sendAttachmentMessage. Waiting and retrying...');
+                console.error('524 Timeout in sendAttachmentMessage. Waiting and retry...');
                 await this.delay(50000);
-                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token, cfClearance);
+                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token, browserSession);
             }
 
             if (!response.ok) {
@@ -589,47 +621,56 @@ const chatService = {
         }
     },
 
-    async sendFollowUpMessage(senderId, recipientId, messageContent, token, cfClearance = null) {
+    async sendFollowUpMessage(senderId, recipientId, messageContent, token, browserSession = null) {
 
         console.log('[sendFollowUpMessage] CALLED MSG CONTET:', messageContent)
 
         if (!messageContent) return { success: true };
 
         try {
-            const headers = {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br, zstd',
-                'Connection': 'keep-alive',
-                'Sec-Fetch-Dest': 'empty',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'same-origin',
-                'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
-                'Sec-CH-UA-Mobile': '?0',
-                'Sec-CH-UA-Platform': '"macOS"',
-                'Referer': 'https://alpha.date/chat',
-                'Origin': 'https://alpha.date',
-                'Host': 'alpha.date'
-            };
+            let response;
+            let messageData;
             
-            // Add cf_clearance cookie if available
-            if (cfClearance) {
-                headers['Cookie'] = `cf_clearance=${cfClearance}`;
-                console.log('[DEBUG] Adding cf_clearance cookie to sendFollowUpMessage request');
-            } else {
-                console.log('[DEBUG] No cf_clearance cookie available for sendFollowUpMessage request');
+            // Try browser session first if available
+            if (browserSession && browserSession.page) {
+                try {
+                    console.log(`[CHAT SERVICE] Sending follow-up message via browser session...`);
+                    messageData = await this.makeApiCallFromBrowser(
+                        browserSession.page,
+                        'https://alpha.date/api/chat/message',
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: {
+                                sender_id: +senderId,
+                                recipient_id: recipientId,
+                                message_content: messageContent,
+                                message_type: "SENT_TEXT",
+                                filename: "",
+                                chance: true
+                            }
+                        }
+                    );
+                    
+                    if (messageData) {
+                        console.log(`[CHAT SERVICE] Successfully sent follow-up message via browser`);
+                        return { success: true };
+                    }
+                } catch (browserError) {
+                    console.log(`[CHAT SERVICE] Browser session failed for follow-up message, falling back to direct API...`);
+                }
             }
             
-            // Update referrer for message sending
-            headers['Referer'] = 'https://alpha.date/chance';
-            headers['X-Request-ID'] = `-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`;
-            
-            const response = await fetch('https://alpha.date/api/chat/message', {
+            // Fallback to direct API call
+            response = await fetch('https://alpha.date/api/chat/message', {
                 method: 'POST',
-                headers: headers,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({
                     sender_id: +senderId,
                     recipient_id: recipientId,
@@ -640,16 +681,16 @@ const chatService = {
                 })
             });
 
-            const messageData = await response.json();
-            console.log('[DEBUG LIKES] ' + JSON.stringify(messageData) + ' for man ID ' + recipientId)
-            const hasRestrictionError = messageData.error === "Restriction of sending a personal message. Try when the list becomes active";
+            const apiMessageData = await response.json();
+            console.log('[DEBUG LIKES] ' + JSON.stringify(apiMessageData) + ' for man ID ' + recipientId)
+            const hasRestrictionError = apiMessageData.error === "Restriction of sending a personal message. Try when the list becomes active";
 
             // Handle different HTTP status codes
             if (response.status === 429) {
                 // Rate limited - wait and retry
                 console.error('429 Rate limited in sendFollowUpMessage. Waiting and retrying...');
                 await this.delay(50000);
-                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token, cfClearance);
+                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token, browserSession);
             }
 
             if (response.status === 401) {
@@ -675,7 +716,7 @@ const chatService = {
                 // Timeout - wait and retry
                 console.error('524 Timeout in sendFollowUpMessage. Waiting and retrying...');
                 await this.delay(50000);
-                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token, cfClearance);
+                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token, browserSession);
             }
 
             if (!response.ok) {
@@ -772,8 +813,8 @@ const chatService = {
     },
 
     // Add this method to reuse mailService's attachment logic for chat
-    async getAttachments(profileId, token, forceRefresh = false) {
-        return mailService.getAttachments(profileId, token, forceRefresh);
+    async getAttachments(profileId, token, forceRefresh = false, browserSession = null) {
+        return mailService.getAttachments(profileId, token, forceRefresh, browserSession);
     }
 };
 

@@ -1,6 +1,7 @@
 // controllers/authController.js
 import express from 'express';
 import authService from '../services/authService.js';
+import browserSessionManager from '../services/browserSessionManager.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -144,6 +145,19 @@ router.post('/alpha-login', async (req, res) => {
         req.session.email = email;
         req.session.token = authResult.token;
         req.session.operatorId = authResult.operatorId;
+        
+        // Store browser session if available (for API calls from browser context)
+        if (authResult.browserSession) {
+            req.session.browserSession = {
+                hasBrowserSession: true,
+                token: authResult.token,
+                operatorId: authResult.operatorId
+            };
+            
+            // Store in browser session manager
+            browserSessionManager.storeSession(req.sessionID, authResult.browserSession, email);
+            console.log('[AUTH] Browser session stored for future API calls');
+        }
 
         // Step 4: Online heartbeat is now handled per-profile when processing starts
         // No need to start a general operator heartbeat anymore
@@ -272,92 +286,6 @@ router.post('/test-session', (req, res) => {
                 operatorId: req.session.operatorId || 'not set'
             }
         });
-    }
-});
-
-// New endpoint for creating session from JWT token (for Chrome extension)
-router.post('/create-session-from-token', async (req, res) => {
-    try {
-        const { token } = req.body;
-        
-        if (!token) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Token is required' 
-            });
-        }
-        
-        console.log('Creating session from JWT token');
-        
-        // Decode the JWT token to extract user information
-        try {
-            // Simple JWT decode without verification (since we trust the token from Alpha.Date)
-            const base64Url = token.split('.')[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-            }).join(''));
-            
-            const decoded = JSON.parse(jsonPayload);
-            
-            if (!decoded || !decoded.email || !decoded.id) {
-                return res.status(400).json({ 
-                    success: false, 
-                    error: 'Invalid JWT token format' 
-                });
-            }
-            
-            // Store the session data
-            req.session.email = decoded.email;
-            req.session.token = token;
-            req.session.operatorId = decoded.id;
-            
-                // Store cf_clearance cookie if provided
-    const { cfClearance } = req.body;
-    console.log('=== AUTH CONTROLLER - CREATE SESSION FROM TOKEN ===');
-    console.log('cfClearance provided in request:', !!cfClearance);
-    console.log('cfClearance value:', cfClearance ? cfClearance.substring(0, 50) + '...' : 'null');
-    
-    if (cfClearance) {
-        req.session.cfClearance = cfClearance;
-        console.log('cfClearance stored in session:', req.session.cfClearance ? 'success' : 'failed');
-    } else {
-        console.log('No cfClearance provided - session will not have cf_clearance cookie');
-    }
-            
-
-            
-            console.log('Session created from JWT:', {
-                sessionId: req.sessionID,
-                sessionData: req.session,
-                tokenPresent: !!req.session.token,
-                email: req.session.email,
-                operatorId: req.session.operatorId
-            });
-            
-            res.json({
-                success: true,
-                sessionToken: req.sessionID,
-                message: 'Session created successfully from JWT token',
-                userData: {
-                    email: decoded.email,
-                    operatorId: decoded.id,
-                    firstName: decoded.firstname,
-                    lastName: decoded.lastname
-                }
-            });
-            
-        } catch (jwtError) {
-            console.error('JWT decode error:', jwtError);
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Failed to decode JWT token' 
-            });
-        }
-        
-    } catch (error) {
-        console.error('Create session from token error:', error);
-        res.status(500).json({ success: false, error: error.message });
     }
 });
 

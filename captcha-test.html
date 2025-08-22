@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captcha Solver Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"], input[type="password"], input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="checkbox"] {
+            width: auto;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+        }
+        .api-endpoints {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .endpoint {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: white;
+            border-radius: 3px;
+            border-left: 4px solid #007bff;
+        }
+        .endpoint h4 {
+            margin: 0 0 5px 0;
+            color: #333;
+        }
+        .endpoint p {
+            margin: 0;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧩 Captcha Solver Test Interface</h1>
+        
+        <form id="captchaForm">
+            <div class="form-group">
+                <label for="url">Target URL:</label>
+                <input type="text" id="url" name="url" value="https://alpha.date/login" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="email">Email (optional):</label>
+                <input type="text" id="email" name="email" placeholder="Enter email for login">
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password (optional):</label>
+                <input type="password" id="password" name="password" placeholder="Enter password for login">
+            </div>
+            
+            <div class="form-group">
+                <label for="timeout">Timeout (seconds):</label>
+                <input type="number" id="timeout" name="timeout" value="300" min="10" max="600">
+            </div>
+            
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="headless" name="headless">
+                    <label for="headless">Headless mode (no browser window)</label>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="waitForManual" name="waitForManual" checked>
+                    <label for="waitForManual">Wait for manual solving</label>
+                </div>
+            </div>
+            
+            <button type="submit">🧩 Solve Captcha</button>
+            <button type="button" onclick="verifyCaptcha()">🔍 Verify Captcha</button>
+            <button type="button" onclick="getStatus()">📊 Get Status</button>
+        </form>
+        
+        <div id="result"></div>
+        
+        <div class="api-endpoints">
+            <h3>📡 Available API Endpoints</h3>
+            
+            <div class="endpoint">
+                <h4>POST /api/captcha/solve</h4>
+                <p>Main captcha solving endpoint - detects and solves any type of captcha</p>
+            </div>
+            
+            <div class="endpoint">
+                <h4>POST /api/captcha/cloudflare</h4>
+                <p>Specifically for Cloudflare challenges</p>
+            </div>
+            
+            <div class="endpoint">
+                <h4>POST /api/captcha/hcaptcha</h4>
+                <p>Specifically for hCaptcha challenges</p>
+            </div>
+            
+            <div class="endpoint">
+                <h4>POST /api/captcha/recaptcha</h4>
+                <p>Specifically for reCAPTCHA challenges</p>
+            </div>
+            
+            <div class="endpoint">
+                <h4>GET /api/captcha/verify?url=...</h4>
+                <p>Verify if a URL has any captcha (quick check)</p>
+            </div>
+            
+            <div class="endpoint">
+                <h4>GET /api/captcha/status</h4>
+                <p>Get service status and supported features</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin + '/api/captcha';
+        
+        function showResult(message, type = 'info') {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = `result ${type}`;
+            resultDiv.textContent = message;
+        }
+        
+        function showLoading() {
+            showResult('⏳ Processing... Please wait.', 'info');
+        }
+        
+        async function solveCaptcha(formData) {
+            try {
+                showLoading();
+                
+                const response = await fetch(`${API_BASE}/solve`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        url: formData.get('url'),
+                        email: formData.get('email') || '',
+                        password: formData.get('password') || '',
+                        timeout: parseInt(formData.get('timeout')) * 1000, // Convert to milliseconds
+                        headless: formData.get('headless') === 'on',
+                        waitForManual: formData.get('waitForManual') === 'on'
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showResult(`✅ Success!\nType: ${result.type}\nMessage: ${result.message}`, 'success');
+                } else {
+                    showResult(`❌ Failed!\nType: ${result.type}\nError: ${result.error || result.message}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function verifyCaptcha() {
+            const url = document.getElementById('url').value;
+            if (!url) {
+                showResult('❌ Please enter a URL first', 'error');
+                return;
+            }
+            
+            try {
+                showLoading();
+                
+                const response = await fetch(`${API_BASE}/verify?url=${encodeURIComponent(url)}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    const status = result.found ? 'Found' : 'Not found';
+                    showResult(`🔍 Verification Result:\nCaptcha: ${status}\nType: ${result.type}\nMessage: ${result.message}`, 'info');
+                } else {
+                    showResult(`❌ Verification failed: ${result.error || result.message}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function getStatus() {
+            try {
+                showLoading();
+                
+                const response = await fetch(`${API_BASE}/status`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    const features = result.features.join('\n• ');
+                    showResult(`📊 Service Status:\nStatus: ${result.status}\nSupported Types: ${result.supportedTypes.join(', ')}\n\nFeatures:\n• ${features}`, 'info');
+                } else {
+                    showResult(`❌ Status check failed: ${result.error || result.message}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        document.getElementById('captchaForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            solveCaptcha(formData);
+        });
+        
+        // Auto-check status on page load
+        window.addEventListener('load', function() {
+            getStatus();
+        });
+    </script>
+</body>
+</html>
