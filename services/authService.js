@@ -410,7 +410,18 @@ const authService = {
             if (!emailField) {
                 console.log('[ERROR] No email field found with any selector');
                 // Take a screenshot for debugging
-                await page.screenshot({ path: '/opt/render/project/src/debug-screenshots/login-form-debug.png' });
+                const timestamp = Date.now();
+                const screenshotPath = `/opt/render/project/src/debug-screenshots/login-form-debug-${timestamp}.png`;
+                await page.screenshot({ path: screenshotPath });
+                console.log(`[INFO] Debug screenshot saved: ${screenshotPath}`);
+                
+                // Also save the page HTML for debugging
+                const htmlPath = `/opt/render/project/src/debug-screenshots/login-form-debug-${timestamp}.html`;
+                const pageContent = await page.content();
+                const fs = await import('fs');
+                fs.writeFileSync(htmlPath, pageContent);
+                console.log(`[INFO] Debug HTML saved: ${htmlPath}`);
+                
                 throw new Error('Email field not found');
             }
             
@@ -431,7 +442,10 @@ const authService = {
             if (!passwordField) {
                 console.log('[ERROR] No password field found with any selector');
                 // Take a screenshot for debugging
-                await page.screenshot({ path: '/opt/render/project/src/debug-screenshots/login-form-debug.png' });
+                const timestamp = Date.now();
+                const screenshotPath = `/opt/render/project/src/debug-screenshots/login-form-debug-${timestamp}.png`;
+                await page.screenshot({ path: screenshotPath });
+                console.log(`[INFO] Debug screenshot saved: ${screenshotPath}`);
                 throw new Error('Password field not found');
             }
 
@@ -475,7 +489,10 @@ const authService = {
             if (!submitButton) {
                 console.log('[ERROR] No submit button found with any selector');
                 // Take a screenshot for debugging
-                await page.screenshot({ path: '/opt/render/project/src/debug-screenshots/login-form-debug.png' });
+                const timestamp = Date.now();
+                const screenshotPath = `/opt/render/project/src/debug-screenshots/login-form-debug-${timestamp}.png`;
+                await page.screenshot({ path: screenshotPath });
+                console.log(`[INFO] Debug screenshot saved: ${screenshotPath}`);
                 throw new Error('Submit button not found');
             }
             

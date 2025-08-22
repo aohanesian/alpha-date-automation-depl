@@ -244,6 +244,44 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// Debug screenshots endpoint
+app.get('/api/debug-screenshots', (req, res) => {
+    try {
+        const { readdirSync } = require('fs');
+        const screenshots = readdirSync('/opt/render/project/src/debug-screenshots/')
+            .filter(file => file.endsWith('.png'))
+            .map(file => ({
+                name: file,
+                url: `/api/debug-screenshots/${file}`,
+                timestamp: file.replace('.png', '').split('-').slice(-1)[0] // Extract timestamp
+            }))
+            .sort((a, b) => b.timestamp - a.timestamp); // Sort by timestamp, newest first
+        
+        res.json({
+            success: true,
+            screenshots: screenshots,
+            count: screenshots.length
+        });
+    } catch (error) {
+        res.json({
+            success: false,
+            error: error.message,
+            screenshots: []
+        });
+    }
+});
+
+// Serve individual screenshot files
+app.get('/api/debug-screenshots/:filename', (req, res) => {
+    try {
+        const filename = req.params.filename;
+        const filepath = `/opt/render/project/src/debug-screenshots/${filename}`;
+        res.sendFile(filepath);
+    } catch (error) {
+        res.status(404).json({ error: 'Screenshot not found' });
+    }
+});
+
 // Chrome test endpoint
 app.get('/api/chrome-test', async (req, res) => {
     try {
