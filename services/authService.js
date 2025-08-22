@@ -201,13 +201,18 @@ const authService = {
             console.log('[INFO] Attempting to authenticate with Alpha.Date using Puppeteer with stealth plugin');
             
             // Check if proxy is configured and use it for better Cloudflare bypass
-            const proxyHost = process.env.PROXY_HOST || '172.64.48.37';
-            const proxyPort = process.env.PROXY_PORT || '80';
+            const proxyHost = process.env.PROXY_HOST || '51.79.50.22';
+            const proxyPort = process.env.PROXY_PORT || '9300';
             const useProxy = process.env.USE_PROXY === 'true' || process.env.NODE_ENV === 'production';
             
             if (useProxy) {
                 console.log(`[INFO] Using proxy ${proxyHost}:${proxyPort} for Cloudflare bypass...`);
-                return await this.authenticateWithProxy(email, password, proxyHost, proxyPort);
+                try {
+                    return await this.authenticateWithProxy(email, password, proxyHost, proxyPort);
+                } catch (proxyError) {
+                    console.log('[INFO] Proxy authentication failed, trying direct connection...');
+                    return await this.authenticateWithDirectConnection(email, password);
+                }
             }
             
             // Check if we're in production and if Puppeteer is available
@@ -867,38 +872,7 @@ const authService = {
             console.log('[INFO] Starting proxy authentication...');
             console.log(`[INFO] Using proxy: ${proxyHost}:${proxyPort}`);
             
-            // Configure Puppeteer with proxy
-            const launchOptions = {
-                headless: true,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--disable-gpu',
-                    '--disable-background-timer-throttling',
-                    '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding',
-                    '--disable-features=TranslateUI',
-                    '--disable-ipc-flooding-protection',
-                    '--disable-default-apps',
-                    '--disable-extensions',
-                    '--disable-plugins',
-                    '--disable-images',
-                    '--disable-javascript',
-                    '--disable-web-security',
-                    '--disable-features=VizDisplayCompositor',
-                    '--proxy-server=http://' + proxyHost + ':' + proxyPort,
-                    '--ignore-certificate-errors',
-                    '--ignore-ssl-errors',
-                    '--ignore-certificate-errors-spki-list',
-                    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                ]
-            };
-
-            // Find Chrome executable path
+            // Find Chrome executable path first
             let foundChromePath = null;
             const { existsSync } = await import('fs');
             const { execSync } = await import('child_process');
@@ -977,18 +951,382 @@ const authService = {
                 }
             }
             
-            if (foundChromePath) {
-                launchOptions.executablePath = foundChromePath;
-                console.log(`[INFO] Using Chrome executable: ${foundChromePath}`);
-            } else {
+            if (!foundChromePath) {
                 console.log('[ERROR] No Chrome executable found for proxy authentication');
                 throw new Error('Chrome executable not found');
             }
+            
+            // Try different proxy types
+            const proxyTypes = ['socks5://', 'socks4://', 'http://'];
+            let lastError = null;
+            
+            for (const proxyType of proxyTypes) {
+                try {
+                    console.log(`[INFO] Trying proxy type: ${proxyType}`);
+                    
+                    const launchOptions = {
+                        headless: true,
+                        executablePath: foundChromePath,
+                        args: [
+                            '--no-sandbox',
+                            '--disable-setuid-sandbox',
+                            '--disable-dev-shm-usage',
+                            '--disable-accelerated-2d-canvas',
+                            '--no-first-run',
+                            '--no-zygote',
+                            '--disable-gpu',
+                            '--disable-background-timer-throttling',
+                            '--disable-backgrounding-occluded-windows',
+                            '--disable-renderer-backgrounding',
+                            '--disable-features=TranslateUI',
+                            '--disable-ipc-flooding-protection',
+                            '--disable-default-apps',
+                            '--disable-extensions',
+                            '--disable-plugins',
+                            '--disable-images',
+                            '--disable-javascript',
+                            '--disable-web-security',
+                            '--disable-features=VizDisplayCompositor',
+                            '--proxy-server=' + proxyType + proxyHost + ':' + proxyPort,
+                            '--ignore-certificate-errors',
+                            '--ignore-ssl-errors',
+                            '--ignore-certificate-errors-spki-list',
+                            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                        ]
+                    };
 
-            console.log('[INFO] Launching browser with proxy configuration...');
+                    console.log('[INFO] Launching browser with proxy configuration...');
+                    browser = await puppeteer.launch(launchOptions);
+                    
+                    console.log('[INFO] Browser launched successfully with proxy');
+                    
+                    const page = await browser.newPage();
+                    
+                    // Set additional headers to look more like a real browser
+                    await page.setExtraHTTPHeaders({
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Sec-Fetch-User': '?1',
+                        'Upgrade-Insecure-Requests': '1'
+                    });
+
+                    console.log('[INFO] Navigating to Alpha.Date login page via proxy...');
+                    await page.goto('https://alpha.date/login', { 
+                        waitUntil: 'networkidle2',
+                        timeout: 30000 
+                    });
+
+                    // Wait for page to load and check for Cloudflare
+                    await page.waitForTimeout(3000);
+                    
+                    const currentUrl = page.url();
+                    console.log('[INFO] Current URL after navigation:', currentUrl);
+                    
+                    // Check if we hit a Cloudflare challenge
+                    const cloudflareDetected = await page.evaluate(() => {
+                        return document.title.includes('Cloudflare') || 
+                               document.body.textContent.includes('Checking your browser') ||
+                               document.body.textContent.includes('Please wait while we verify');
+                    });
+                    
+                    if (cloudflareDetected) {
+                        console.log('[INFO] Cloudflare challenge detected, waiting for manual resolution...');
+                        console.log('[INFO] Please manually solve the Cloudflare challenge in the browser window...');
+                        
+                        // Wait for Cloudflare to be resolved (up to 60 seconds)
+                        await page.waitForFunction(() => {
+                            return !document.title.includes('Cloudflare') && 
+                                   !document.body.textContent.includes('Checking your browser') &&
+                                   !document.body.textContent.includes('Please wait while we verify');
+                        }, { timeout: 60000 });
+                        
+                        console.log('[INFO] Cloudflare challenge appears to be resolved');
+                    }
+
+                    // Handle any popup modals
+                    await this.handlePopupModals(page);
+
+                    console.log('[INFO] Filling login form...');
+                    
+                    // Wait for login form elements with multiple selectors
+                    const emailSelector = 'input[name="login"], input[data-testid="email"], input[type="email"], input[placeholder*="email"]';
+                    const passwordSelector = 'input[name="password"], input[data-testid="password"], input[type="password"]';
+                    const submitSelector = 'button[type="submit"], button[data-testid="submit-btn"], input[type="submit"], button:contains("Log in"), button:contains("Sign in")';
+                    
+                    await page.waitForSelector(emailSelector, { timeout: 10000 });
+                    await page.waitForSelector(passwordSelector, { timeout: 10000 });
+                    
+                    // Fill in the form
+                    await page.type(emailSelector, email);
+                    await page.type(passwordSelector, password);
+                    
+                    // Click submit button
+                    await page.click(submitSelector);
+                    
+                    // Wait for navigation or response
+                    await page.waitForTimeout(5000);
+                    
+                    // Check if login was successful
+                    const loginSuccess = await page.evaluate(() => {
+                        // Check for error messages
+                        const errorElements = document.querySelectorAll('.error, .alert, .message, [class*="error"], [class*="alert"]');
+                        for (const element of errorElements) {
+                            if (element.textContent.toLowerCase().includes('invalid') || 
+                                element.textContent.toLowerCase().includes('incorrect') ||
+                                element.textContent.toLowerCase().includes('failed')) {
+                                return false;
+                            }
+                        }
+                        
+                        // Check if we're redirected to dashboard or main page
+                        return window.location.href.includes('/dashboard') || 
+                               window.location.href.includes('/profile') ||
+                               !window.location.href.includes('/login');
+                    });
+                    
+                    if (!loginSuccess) {
+                        throw new Error('Login failed - invalid credentials or login form not found');
+                    }
+                    
+                    console.log('[INFO] Login successful via proxy');
+                    
+                    // Extract token from cookies or localStorage
+                    const token = await page.evaluate(() => {
+                        // Try to get token from localStorage
+                        const localToken = localStorage.getItem('token') || localStorage.getItem('authToken') || localStorage.getItem('accessToken');
+                        if (localToken) return localToken;
+                        
+                        // Try to get token from sessionStorage
+                        const sessionToken = sessionStorage.getItem('token') || sessionStorage.getItem('authToken') || sessionStorage.getItem('accessToken');
+                        if (sessionToken) return sessionToken;
+                        
+                        // Try to get token from cookies
+                        const cookies = document.cookie.split(';');
+                        for (const cookie of cookies) {
+                            const [name, value] = cookie.trim().split('=');
+                            if (name === 'token' || name === 'authToken' || name === 'accessToken') {
+                                return value;
+                            }
+                        }
+                        
+                        return null;
+                    });
+                    
+                    if (!token) {
+                        throw new Error('Could not extract authentication token');
+                    }
+                    
+                    // Extract operator ID
+                    const operatorId = await this.extractOperatorId(page, token);
+                    
+                    console.log('[INFO] Authentication successful via proxy');
+                    
+                    // Store browser session
+                    const sessionId = await browserSessionManager.storeBrowserSession(browser, page, email, token, operatorId);
+                    
+                    return {
+                        success: true,
+                        token,
+                        operatorId,
+                        sessionId,
+                        message: 'Authentication successful via proxy'
+                    };
+                    
+                } catch (proxyError) {
+                    console.log(`[INFO] Proxy type ${proxyType} failed:`, proxyError.message);
+                    lastError = proxyError;
+                    
+                    if (browser) {
+                        await browser.close();
+                        browser = null;
+                    }
+                    
+                    // Continue to next proxy type
+                    continue;
+                }
+            }
+            
+            // If all proxy types failed, throw the last error
+            throw lastError || new Error('All proxy types failed');
+            
+        } catch (error) {
+            console.error('[ERROR] Proxy authentication error:', error);
+            
+            // Fallback to API method
+            console.log('[INFO] Falling back to API authentication method...');
+            if (browser) {
+                await browser.close();
+            }
+            return await this.authenticateWithAPI(email, password);
+        }
+    },
+
+    decodeJWTToken(token) {
+        try {
+            // JWT tokens have 3 parts separated by dots
+            const parts = token.split('.');
+            if (parts.length !== 3) {
+                throw new Error('Invalid JWT format');
+            }
+            
+            // Decode the payload (second part)
+            const payload = parts[1];
+            
+            // Add padding if needed for base64 decode
+            const paddedPayload = payload + '='.repeat((4 - payload.length % 4) % 4);
+            
+            // Decode base64
+            const decodedPayload = Buffer.from(paddedPayload, 'base64').toString('utf8');
+            
+            // Parse JSON
+            const tokenData = JSON.parse(decodedPayload);
+            
+            console.log('[INFO] JWT token decoded successfully:', {
+                id: tokenData.id,
+                email: tokenData.email,
+                agency_id: tokenData.agency_id,
+                external_id: tokenData.external_id
+            });
+            
+            // Return the operator ID
+            return tokenData.id ? tokenData.id.toString() : null;
+            
+        } catch (error) {
+            console.error('[ERROR] Failed to decode JWT token:', error.message);
+            return null;
+        }
+    },
+
+    async authenticateWithDirectConnection(email, password) {
+        let browser = null;
+        
+        try {
+            console.log('[INFO] Starting direct connection authentication...');
+            
+            // Find Chrome executable path first
+            let foundChromePath = null;
+            const { existsSync } = await import('fs');
+            const { execSync } = await import('child_process');
+            
+            // Try to find Chrome using system commands
+            let systemChromePath = null;
+            try {
+                systemChromePath = execSync('which google-chrome', { encoding: 'utf8' }).trim();
+            } catch (err) {
+                console.log('[INFO] google-chrome not found in PATH');
+            }
+            
+            const possiblePaths = [
+                process.env.PUPPETEER_EXECUTABLE_PATH,
+                systemChromePath,
+                '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
+                '/opt/render/.cache/puppeteer/chrome-linux/chrome',
+                '/usr/bin/google-chrome-stable',
+                '/usr/bin/google-chrome',
+                '/usr/bin/chromium-browser',
+                '/usr/bin/chromium'
+            ].filter(Boolean);
+            
+            console.log('[INFO] Checking Chrome paths for direct connection...');
+            for (const path of possiblePaths) {
+                if (existsSync(path)) {
+                    foundChromePath = path;
+                    console.log(`[INFO] Found Chrome at: ${path}`);
+                    break;
+                } else {
+                    console.log(`[INFO] Chrome not found at: ${path}`);
+                }
+            }
+            
+            // If still not found, try to search the filesystem
+            if (!foundChromePath) {
+                console.log('[INFO] Searching filesystem for Chrome...');
+                try {
+                    // First try to find the actual Chrome binary
+                    let searchResult = execSync('find /opt -name "chrome" -type f -executable 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
+                    if (searchResult && existsSync(searchResult)) {
+                        foundChromePath = searchResult;
+                        console.log(`[INFO] Found Chrome binary via filesystem search: ${searchResult}`);
+                    } else {
+                        // Fallback to broader search, excluding shell scripts
+                        searchResult = execSync('find /opt -name "*chrome*" -type f -executable -not -name "*.sh" 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
+                        if (searchResult && existsSync(searchResult)) {
+                            foundChromePath = searchResult;
+                            console.log(`[INFO] Found Chrome via filesystem search: ${searchResult}`);
+                        }
+                    }
+                } catch (err) {
+                    console.log('[INFO] Filesystem search failed:', err.message);
+                }
+            }
+            
+            // If still not found, try to install Puppeteer browsers
+            if (!foundChromePath) {
+                console.log('[INFO] Chrome not found, attempting to install Puppeteer browsers...');
+                try {
+                    // Install Puppeteer browsers
+                    execSync('npx puppeteer browsers install chrome --force', { stdio: 'pipe' });
+                    
+                    // Check if installation was successful
+                    try {
+                        const puppeteerPath = puppeteer.executablePath();
+                        if (puppeteerPath && existsSync(puppeteerPath)) {
+                            foundChromePath = puppeteerPath;
+                            console.log(`[INFO] Puppeteer Chrome installed successfully at: ${puppeteerPath}`);
+                        }
+                    } catch (err) {
+                        console.log('[INFO] Could not get Puppeteer executable path after installation:', err.message);
+                    }
+                } catch (err) {
+                    console.log('[INFO] Puppeteer browser installation failed:', err.message);
+                }
+            }
+            
+            if (!foundChromePath) {
+                console.log('[ERROR] No Chrome executable found for direct connection');
+                throw new Error('Chrome executable not found');
+            }
+            
+            const launchOptions = {
+                headless: true,
+                executablePath: foundChromePath,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--disable-gpu',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding',
+                    '--disable-features=TranslateUI',
+                    '--disable-ipc-flooding-protection',
+                    '--disable-default-apps',
+                    '--disable-extensions',
+                    '--disable-plugins',
+                    '--disable-images',
+                    '--disable-javascript',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor',
+                    '--ignore-certificate-errors',
+                    '--ignore-ssl-errors',
+                    '--ignore-certificate-errors-spki-list',
+                    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                ]
+            };
+
+            console.log('[INFO] Launching browser with direct connection...');
             browser = await puppeteer.launch(launchOptions);
             
-            console.log('[INFO] Browser launched successfully with proxy');
+            console.log('[INFO] Browser launched successfully with direct connection');
             
             const page = await browser.newPage();
             
@@ -1006,7 +1344,7 @@ const authService = {
                 'Upgrade-Insecure-Requests': '1'
             });
 
-            console.log('[INFO] Navigating to Alpha.Date login page via proxy...');
+            console.log('[INFO] Navigating to Alpha.Date login page via direct connection...');
             await page.goto('https://alpha.date/login', { 
                 waitUntil: 'networkidle2',
                 timeout: 30000 
@@ -1084,7 +1422,7 @@ const authService = {
                 throw new Error('Login failed - invalid credentials or login form not found');
             }
             
-            console.log('[INFO] Login successful via proxy');
+            console.log('[INFO] Login successful via direct connection');
             
             // Extract token from cookies or localStorage
             const token = await page.evaluate(() => {
@@ -1115,7 +1453,7 @@ const authService = {
             // Extract operator ID
             const operatorId = await this.extractOperatorId(page, token);
             
-            console.log('[INFO] Authentication successful via proxy');
+            console.log('[INFO] Authentication successful via direct connection');
             
             // Store browser session
             const sessionId = await browserSessionManager.storeBrowserSession(browser, page, email, token, operatorId);
@@ -1125,11 +1463,11 @@ const authService = {
                 token,
                 operatorId,
                 sessionId,
-                message: 'Authentication successful via proxy'
+                message: 'Authentication successful via direct connection'
             };
             
         } catch (error) {
-            console.error('[ERROR] Proxy authentication error:', error);
+            console.error('[ERROR] Direct connection authentication error:', error);
             
             // Fallback to API method
             console.log('[INFO] Falling back to API authentication method...');
@@ -1137,42 +1475,6 @@ const authService = {
                 await browser.close();
             }
             return await this.authenticateWithAPI(email, password);
-        }
-    },
-
-    decodeJWTToken(token) {
-        try {
-            // JWT tokens have 3 parts separated by dots
-            const parts = token.split('.');
-            if (parts.length !== 3) {
-                throw new Error('Invalid JWT format');
-            }
-            
-            // Decode the payload (second part)
-            const payload = parts[1];
-            
-            // Add padding if needed for base64 decode
-            const paddedPayload = payload + '='.repeat((4 - payload.length % 4) % 4);
-            
-            // Decode base64
-            const decodedPayload = Buffer.from(paddedPayload, 'base64').toString('utf8');
-            
-            // Parse JSON
-            const tokenData = JSON.parse(decodedPayload);
-            
-            console.log('[INFO] JWT token decoded successfully:', {
-                id: tokenData.id,
-                email: tokenData.email,
-                agency_id: tokenData.agency_id,
-                external_id: tokenData.external_id
-            });
-            
-            // Return the operator ID
-            return tokenData.id ? tokenData.id.toString() : null;
-            
-        } catch (error) {
-            console.error('[ERROR] Failed to decode JWT token:', error.message);
-            return null;
         }
     },
 
