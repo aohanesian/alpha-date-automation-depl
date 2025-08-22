@@ -187,6 +187,10 @@ const authService = {
             
             // Check if we're in production and if Puppeteer is available
             if (process.env.NODE_ENV === 'production') {
+                console.log('[INFO] Production environment detected, checking Chrome availability...');
+                console.log('[INFO] PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH);
+                console.log('[INFO] PUPPETEER_CACHE_DIR:', process.env.PUPPETEER_CACHE_DIR);
+                
                 try {
                     // Test if Puppeteer can launch at all
                     const testBrowser = await puppeteer.launch({
@@ -226,9 +230,10 @@ const authService = {
                 // Try multiple possible Chrome paths
                 const possiblePaths = [
                     process.env.PUPPETEER_EXECUTABLE_PATH,
+                    '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
+                    '/opt/render/.cache/puppeteer/chrome-linux/chrome',
                     '/usr/bin/google-chrome-stable',
                     '/usr/bin/google-chrome',
-                    '/opt/render/.cache/puppeteer/chrome-linux/chrome',
                     '/usr/bin/chromium-browser',
                     '/usr/bin/chromium'
                 ].filter(Boolean);

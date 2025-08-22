@@ -244,6 +244,59 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// Chrome test endpoint
+app.get('/api/chrome-test', async (req, res) => {
+    try {
+        const puppeteer = await import('puppeteer');
+        const { existsSync } = await import('fs');
+        
+        const result = {
+            success: true,
+            timestamp: new Date().toISOString(),
+            environment: process.env.NODE_ENV || 'development',
+            puppeteerVersion: require('puppeteer/package.json').version,
+            executablePath: puppeteer.default.executablePath(),
+            environmentVariables: {
+                PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH,
+                PUPPETEER_CACHE_DIR: process.env.PUPPETEER_CACHE_DIR,
+                NODE_ENV: process.env.NODE_ENV
+            },
+            chromePaths: {
+                puppeteerPath: puppeteer.default.executablePath(),
+                puppeteerPathExists: existsSync(puppeteer.default.executablePath()),
+                envPath: process.env.PUPPETEER_EXECUTABLE_PATH,
+                envPathExists: process.env.PUPPETEER_EXECUTABLE_PATH ? existsSync(process.env.PUPPETEER_EXECUTABLE_PATH) : false,
+                commonPaths: {
+                    '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome': existsSync('/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome'),
+                    '/opt/render/.cache/puppeteer/chrome-linux/chrome': existsSync('/opt/render/.cache/puppeteer/chrome-linux/chrome'),
+                    '/usr/bin/google-chrome-stable': existsSync('/usr/bin/google-chrome-stable'),
+                    '/usr/bin/google-chrome': existsSync('/usr/bin/google-chrome')
+                }
+            }
+        };
+        
+        // Try to launch Chrome
+        try {
+            const browser = await puppeteer.default.launch({
+                headless: 'new',
+                args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            await browser.close();
+            result.chromeLaunch = { success: true, message: 'Chrome launched successfully' };
+        } catch (error) {
+            result.chromeLaunch = { success: false, error: error.message };
+        }
+        
+        res.json(result);
+    } catch (error) {
+        res.json({
+            success: false,
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
 // Captcha test interface
 app.get('/captcha-test', (req, res) => {
     res.sendFile(path.join(__dirname, 'captcha-test.html'));

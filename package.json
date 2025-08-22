@@ -10,6 +10,7 @@
     "build": "npx vite build",
     "build:prod": "bash build.sh",
     "build:simple": "bash build-simple.sh",
+    "build:fast": "bash build-fast.sh",
     "preview": "vite preview",
     "start": "node server.js",
     "server:dev": "nodemon server.js",
