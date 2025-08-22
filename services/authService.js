@@ -226,27 +226,41 @@ const authService = {
                 // Try multiple possible Chrome paths
                 const possiblePaths = [
                     process.env.PUPPETEER_EXECUTABLE_PATH,
-                    '/opt/render/.cache/puppeteer/chrome-linux/chrome',
                     '/usr/bin/google-chrome-stable',
+                    '/usr/bin/google-chrome',
+                    '/opt/render/.cache/puppeteer/chrome-linux/chrome',
                     '/usr/bin/chromium-browser',
                     '/usr/bin/chromium'
                 ].filter(Boolean);
                 
+                console.log('[INFO] Checking for Chrome executable in production...');
                 for (const path of possiblePaths) {
                     try {
                         const { existsSync } = await import('fs');
                         if (existsSync(path)) {
                             launchOptions.executablePath = path;
-                            console.log(`[INFO] Using Chrome executable: ${path}`);
+                            console.log(`[INFO] Found Chrome executable: ${path}`);
                             break;
+                        } else {
+                            console.log(`[INFO] Chrome not found at: ${path}`);
                         }
                     } catch (err) {
-                        console.log(`[INFO] Chrome not found at: ${path}`);
+                        console.log(`[INFO] Error checking path ${path}:`, err.message);
                     }
                 }
                 
                 if (!launchOptions.executablePath) {
-                    console.log('[WARN] Chrome executable not found, letting Puppeteer auto-detect');
+                    console.log('[WARN] Chrome executable not found, trying Puppeteer auto-detect');
+                    // Try to get the path from Puppeteer itself
+                    try {
+                        const puppeteerPath = puppeteer.executablePath();
+                        if (puppeteerPath) {
+                            launchOptions.executablePath = puppeteerPath;
+                            console.log(`[INFO] Using Puppeteer auto-detected path: ${puppeteerPath}`);
+                        }
+                    } catch (err) {
+                        console.log('[WARN] Could not get Puppeteer executable path:', err.message);
+                    }
                 }
             }
 

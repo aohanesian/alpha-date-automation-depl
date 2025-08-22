@@ -14,6 +14,7 @@
     "test:captcha": "node test-captcha.js",
     "test:captcha:manual": "node test-captcha.js --manual",
     "test:chrome": "node test-chrome.js",
+    "test:api": "node test-api-only.js",
     "debug:chrome": "node -e \"const puppeteer = require('puppeteer'); console.log('Puppeteer version:', require('puppeteer/package.json').version); console.log('Chrome executable path:', puppeteer.executablePath()); console.log('Chrome revision:', require('puppeteer/lib/cjs/puppeteer/node/BrowserFetcher.js').revisionInfo(require('puppeteer')).revision);\""
   },
   "dependencies": {

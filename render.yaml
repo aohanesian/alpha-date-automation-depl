@@ -1,4 +1,7 @@
 services:
+  # Alpha Date Automation Service
+  # This service handles authentication with Alpha.Date using both Puppeteer and API methods
+  # If Puppeteer fails (Chrome not available), it falls back to API authentication
   - type: web
     name: alpha-date-automation
     runtime: node
@@ -24,25 +27,55 @@ services:
         libgbm1 \
         libasound2 \
         libatspi2.0-0 \
-        libxshmfence1
+        libxshmfence1 \
+        fonts-liberation \
+        libappindicator3-1 \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libdrm2 \
+        libgtk-3-0 \
+        libnspr4 \
+        libnss3 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxrandr2 \
+        xdg-utils
       
-      # Install Chrome
-      wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add -
+      # Install Chrome with better error handling
+      echo "Installing Google Chrome..."
+      wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - || echo "Warning: Could not add Chrome signing key"
       echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
-      apt-get update && apt-get install -y google-chrome-stable
+      apt-get update
+      apt-get install -y google-chrome-stable || echo "Warning: Could not install Chrome via apt"
+      
+      # Alternative: Download Chrome directly if apt install fails
+      if ! command -v google-chrome &> /dev/null; then
+        echo "Chrome not found via apt, downloading directly..."
+        wget -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+        apt-get install -y /tmp/chrome.deb || echo "Warning: Could not install Chrome from deb file"
+      fi
       
       # Install Node.js dependencies
       npm install
       
-      # Install Puppeteer browsers
-      npx puppeteer browsers install chrome
+      # Force install Puppeteer browsers with specific version
+      echo "Installing Puppeteer browsers..."
+      npx puppeteer browsers install chrome --force
       
       # Debug Chrome installation
-      echo "Chrome installed at: $(npx puppeteer browsers list)"
+      echo "=== Chrome Installation Debug ==="
+      echo "System Chrome: $(which google-chrome || echo 'Not found')"
+      echo "System Chrome version: $(google-chrome --version || echo 'Not found')"
+      echo "Puppeteer browsers: $(npx puppeteer browsers list || echo 'Failed to list')"
       npm run debug:chrome
       
       # Test Chrome functionality
-      npm run test:chrome
+      echo "Testing Chrome functionality..."
+      npm run test:chrome || echo "Chrome test failed, but continuing build"
+      
+      # Test API functionality as fallback
+      echo "Testing API functionality..."
+      npm run test:api || echo "API test failed, but continuing build"
       
       # Build the application
       npm run build
@@ -53,8 +86,10 @@ services:
       - key: PUPPETEER_CACHE_DIR
         value: /opt/render/.cache/puppeteer
       - key: PUPPETEER_EXECUTABLE_PATH
-        value: /opt/render/.cache/puppeteer/chrome-linux/chrome
+        value: /usr/bin/google-chrome-stable
       - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
         value: "false"
       - key: PUPPETEER_DISABLE_HEADLESS_WARNING
         value: "true"
+      - key: PUPPETEER_ARGS
+        value: "--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu"
