@@ -100,7 +100,11 @@ router.get('/profiles', async (req, res) => {
         // Fallback to direct API call if browser session failed
         if (!profiles) {
             console.log('[MAIL] Falling back to direct API call for profiles...');
-            profiles = await mailService.getProfiles(req.token);
+            
+            // Try to get browser session for mail service
+            const browserSession = sessionAwareService.getBrowserSession(req.sessionID, email);
+            
+            profiles = await mailService.getProfiles(req.token, browserSession);
         }
         res.json({ success: true, profiles });
     } catch (error) {

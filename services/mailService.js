@@ -24,23 +24,29 @@ const mailService = {
         }
     },
 
-    async getProfiles(token, page = null) {
+    async getProfiles(token, browserSession = null) {
         try {
-            if (page && !page.isClosed()) {
-                // Make API call from browser session
-                console.log('[MAIL SERVICE] Getting profiles from browser session...');
-                const profilesData = await this.makeApiCallFromBrowser(page, 'https://alpha.date/api/operator/profiles', {
-                    method: 'GET',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                
-                if (profilesData) {
-                    console.log('[MAIL SERVICE] Profiles loaded successfully from browser session');
-                    return profilesData;
-                } else {
-                    console.log('[MAIL SERVICE] Browser session failed, falling back to direct API call...');
+            // Try browser session first if available
+            if (browserSession && browserSession.page && !browserSession.page.isClosed()) {
+                try {
+                    console.log('[MAIL SERVICE] Getting profiles via browser session...');
+                    const profilesData = await this.makeApiCallFromBrowser(
+                        browserSession.page,
+                        'https://alpha.date/api/operator/profiles',
+                        {
+                            method: 'GET',
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        }
+                    );
+                    
+                    if (profilesData) {
+                        console.log('[MAIL SERVICE] Profiles loaded successfully from browser session');
+                        return profilesData;
+                    }
+                } catch (browserError) {
+                    console.log('[MAIL SERVICE] Browser session failed, falling back to direct API...');
                 }
-            } else if (page && page.isClosed()) {
+            } else if (browserSession && browserSession.page && browserSession.page.isClosed()) {
                 console.log('[MAIL SERVICE] Browser page is closed, using direct API call...');
             }
 
