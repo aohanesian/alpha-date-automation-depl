@@ -191,14 +191,46 @@ const authService = {
                 console.log('[INFO] PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH);
                 console.log('[INFO] PUPPETEER_CACHE_DIR:', process.env.PUPPETEER_CACHE_DIR);
                 
+                // First, try to find the correct Chrome path
+                const { existsSync } = await import('fs');
+                const possiblePaths = [
+                    process.env.PUPPETEER_EXECUTABLE_PATH,
+                    '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
+                    '/opt/render/.cache/puppeteer/chrome-linux/chrome',
+                    '/usr/bin/google-chrome-stable',
+                    '/usr/bin/google-chrome',
+                    '/usr/bin/chromium-browser',
+                    '/usr/bin/chromium',
+                    puppeteer.executablePath()
+                ].filter(Boolean);
+                
+                console.log('[INFO] Checking Chrome paths...');
+                let foundChromePath = null;
+                for (const path of possiblePaths) {
+                    if (existsSync(path)) {
+                        foundChromePath = path;
+                        console.log(`[INFO] Found Chrome at: ${path}`);
+                        break;
+                    } else {
+                        console.log(`[INFO] Chrome not found at: ${path}`);
+                    }
+                }
+                
+                if (!foundChromePath) {
+                    console.log('[ERROR] No Chrome executable found in any expected location');
+                    console.log('[INFO] Skipping Puppeteer authentication, using API method directly');
+                    return await this.authenticateWithAPI(email, password);
+                }
+                
                 try {
-                    // Test if Puppeteer can launch at all
+                    // Test if Puppeteer can launch with the found path
                     const testBrowser = await puppeteer.launch({
                         headless: 'new',
+                        executablePath: foundChromePath,
                         args: ['--no-sandbox', '--disable-setuid-sandbox']
                     });
                     await testBrowser.close();
-                    console.log('[INFO] Puppeteer test launch successful');
+                    console.log('[INFO] Puppeteer test launch successful with path:', foundChromePath);
                 } catch (testError) {
                     console.error('[ERROR] Puppeteer test launch failed:', testError.message);
                     console.log('[INFO] Skipping Puppeteer authentication, using API method directly');
@@ -227,7 +259,8 @@ const authService = {
 
             // In production, we need to specify the executable path
             if (process.env.NODE_ENV === 'production') {
-                // Try multiple possible Chrome paths
+                // Use the Chrome path we found during the test
+                const { existsSync } = await import('fs');
                 const possiblePaths = [
                     process.env.PUPPETEER_EXECUTABLE_PATH,
                     '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
@@ -235,37 +268,21 @@ const authService = {
                     '/usr/bin/google-chrome-stable',
                     '/usr/bin/google-chrome',
                     '/usr/bin/chromium-browser',
-                    '/usr/bin/chromium'
+                    '/usr/bin/chromium',
+                    puppeteer.executablePath()
                 ].filter(Boolean);
                 
-                console.log('[INFO] Checking for Chrome executable in production...');
+                console.log('[INFO] Setting up Chrome executable path for main launch...');
                 for (const path of possiblePaths) {
-                    try {
-                        const { existsSync } = await import('fs');
-                        if (existsSync(path)) {
-                            launchOptions.executablePath = path;
-                            console.log(`[INFO] Found Chrome executable: ${path}`);
-                            break;
-                        } else {
-                            console.log(`[INFO] Chrome not found at: ${path}`);
-                        }
-                    } catch (err) {
-                        console.log(`[INFO] Error checking path ${path}:`, err.message);
+                    if (existsSync(path)) {
+                        launchOptions.executablePath = path;
+                        console.log(`[INFO] Using Chrome executable for main launch: ${path}`);
+                        break;
                     }
                 }
                 
                 if (!launchOptions.executablePath) {
-                    console.log('[WARN] Chrome executable not found, trying Puppeteer auto-detect');
-                    // Try to get the path from Puppeteer itself
-                    try {
-                        const puppeteerPath = puppeteer.executablePath();
-                        if (puppeteerPath) {
-                            launchOptions.executablePath = puppeteerPath;
-                            console.log(`[INFO] Using Puppeteer auto-detected path: ${puppeteerPath}`);
-                        }
-                    } catch (err) {
-                        console.log('[WARN] Could not get Puppeteer executable path:', err.message);
-                    }
+                    console.log('[WARN] No Chrome executable found for main launch, using default');
                 }
             }
 

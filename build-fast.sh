@@ -21,6 +21,11 @@ npx puppeteer browsers install chrome --force
 echo "Quick Chrome test..."
 timeout 30s npm run test:chrome || echo "Chrome test timed out, but continuing"
 
+# Check what Chrome files actually exist
+echo "Checking Chrome installation..."
+find /opt/render/.cache/puppeteer -name "*chrome*" -type f 2>/dev/null | head -5 || echo "No Chrome files found in Puppeteer cache"
+ls -la /usr/bin/google-chrome* 2>/dev/null || echo "No Chrome in /usr/bin"
+
 # Build the application
 echo "Building application..."
 npm run build

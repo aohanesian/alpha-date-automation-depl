@@ -254,7 +254,6 @@ app.get('/api/chrome-test', async (req, res) => {
             success: true,
             timestamp: new Date().toISOString(),
             environment: process.env.NODE_ENV || 'development',
-            puppeteerVersion: require('puppeteer/package.json').version,
             executablePath: puppeteer.default.executablePath(),
             environmentVariables: {
                 PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH,
