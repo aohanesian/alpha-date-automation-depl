@@ -1119,29 +1119,8 @@ const authService = {
                     await page.type(emailSelector, email);
                     await page.type(passwordSelector, password);
                     
-                    // Click submit button - try multiple approaches
-                    try {
-                        await page.click(submitSelector);
-                    } catch (clickError) {
-                        console.log('[INFO] Direct click failed, trying to find button by text content...');
-                        
-                        // Try to find button by text content
-                        const submitButton = await page.evaluateHandle(() => {
-                            const buttons = Array.from(document.querySelectorAll('button'));
-                            const submitButton = buttons.find(button => {
-                                const text = button.textContent.trim().toLowerCase();
-                                return text.includes('log in') || text.includes('sign in') || text.includes('login') || text.includes('submit');
-                            });
-                            return submitButton;
-                        });
-                        
-                        if (submitButton) {
-                            await submitButton.click();
-                            console.log('[INFO] Submit button clicked via text content search');
-                        } else {
-                            throw new Error('Could not find submit button');
-                        }
-                    }
+                    // Click submit button
+                    await page.click(submitSelector);
                     
                     // Wait for navigation or response
                     await this.safeDelay(page, 5000);
@@ -1468,29 +1447,8 @@ const authService = {
             await page.type(emailSelector, email);
             await page.type(passwordSelector, password);
             
-            // Click submit button - try multiple approaches
-            try {
-                await page.click(submitSelector);
-            } catch (clickError) {
-                console.log('[INFO] Direct click failed, trying to find button by text content...');
-                
-                // Try to find button by text content
-                const submitButton = await page.evaluateHandle(() => {
-                    const buttons = Array.from(document.querySelectorAll('button'));
-                    const submitButton = buttons.find(button => {
-                        const text = button.textContent.trim().toLowerCase();
-                        return text.includes('log in') || text.includes('sign in') || text.includes('login') || text.includes('submit');
-                    });
-                    return submitButton;
-                });
-                
-                if (submitButton) {
-                    await submitButton.click();
-                    console.log('[INFO] Submit button clicked via text content search');
-                } else {
-                    throw new Error('Could not find submit button');
-                }
-            }
+            // Click submit button
+            await page.click(submitSelector);
             
             // Wait for navigation or response
             await this.safeDelay(page, 5000);
