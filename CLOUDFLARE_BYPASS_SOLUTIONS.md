@@ -7,17 +7,18 @@
 
 ## Cost-Effective Solutions
 
-### 1. **Residential Proxy Rotation** (Recommended)
+### 1. **Residential Proxy with Axios** (Recommended)
 **Cost**: $10-50/month vs ZenRows $500+/month
 **Success Rate**: 85-95%
 
 **Providers**:
+- **ResiProx**: Residential proxy service
 - **ProxyScrape**: $10/month for 1000 residential proxies
 - **Bright Data**: $15/month for residential proxy rotation
 - **Oxylabs**: $20/month for residential proxies
 - **SmartProxy**: $25/month for residential rotation
 
-**Implementation**: ✅ Already implemented in `authService.js`
+**Implementation**: ✅ Already implemented in `authService.js` using axios + HttpsProxyAgent
 
 ### 2. **Rotating Datacenter Proxies**
 **Cost**: $5-20/month

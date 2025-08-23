@@ -2062,105 +2062,8 @@ const authService = {
     },
 
     async authenticateWithResidentialProxy(email, password, apiKey) {
-        let browser = null;
-        let foundChromePath = null;
-        
         try {
-            console.log('[INFO] Starting residential proxy authentication...');
-            
-            // Use the same Chrome detection logic as the main function
-            if (process.env.NODE_ENV === 'production') {
-                console.log('[INFO] Production environment detected, checking Chrome availability...');
-                console.log('[INFO] PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH);
-                console.log('[INFO] PUPPETEER_CACHE_DIR:', process.env.PUPPETEER_CACHE_DIR);
-                
-                // First, try to find the correct Chrome path
-                const { existsSync } = await import('fs');
-                const { execSync } = await import('child_process');
-                
-                // Try to find Chrome using system commands
-                let systemChromePath = null;
-                try {
-                    systemChromePath = execSync('which google-chrome', { encoding: 'utf8' }).trim();
-                } catch (err) {
-                    console.log('[INFO] google-chrome not found in PATH');
-                }
-                
-                const possiblePaths = [
-                    process.env.PUPPETEER_EXECUTABLE_PATH,
-                    systemChromePath,
-                    '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
-                    '/opt/render/.cache/puppeteer/chrome-linux/chrome',
-                    '/usr/bin/google-chrome-stable',
-                    '/usr/bin/google-chrome',
-                    '/usr/bin/chromium-browser',
-                    '/usr/bin/chromium'
-                ].filter(Boolean);
-                
-                console.log('[INFO] Checking Chrome paths for residential proxy authentication...');
-                for (const path of possiblePaths) {
-                    if (existsSync(path)) {
-                        foundChromePath = path;
-                        console.log(`[INFO] Found Chrome at: ${path}`);
-                        break;
-                    } else {
-                        console.log(`[INFO] Chrome not found at: ${path}`);
-                    }
-                }
-                
-                // If still not found, try to search the filesystem
-                if (!foundChromePath) {
-                    console.log('[INFO] Searching filesystem for Chrome...');
-                    try {
-                        // First try to find the actual Chrome binary
-                        let searchResult = execSync('find /opt -name "chrome" -type f -executable 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
-                        if (searchResult && existsSync(searchResult)) {
-                            foundChromePath = searchResult;
-                            console.log(`[INFO] Found Chrome binary via filesystem search: ${searchResult}`);
-                        } else {
-                            // Fallback to broader search, excluding shell scripts
-                            searchResult = execSync('find /opt -name "*chrome*" -type f -executable -not -name "*.sh" 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
-                            if (searchResult && existsSync(searchResult)) {
-                                foundChromePath = searchResult;
-                                console.log(`[INFO] Found Chrome via filesystem search: ${searchResult}`);
-                            }
-                        }
-                    } catch (err) {
-                        console.log('[INFO] Filesystem search failed:', err.message);
-                    }
-                }
-                
-                // If still not found, try to install Puppeteer browsers
-                if (!foundChromePath) {
-                    console.log('[INFO] Chrome not found, attempting to install Puppeteer browsers...');
-                    try {
-                        // Install Puppeteer browsers
-                        execSync('npx puppeteer browsers install chrome --force', { stdio: 'pipe' });
-                        
-                        // Check if installation was successful
-                        try {
-                            const puppeteerPath = puppeteer.executablePath();
-                            if (puppeteerPath && existsSync(puppeteerPath)) {
-                                foundChromePath = puppeteerPath;
-                                console.log(`[INFO] Found Chrome via Puppeteer installation: ${puppeteerPath}`);
-                            }
-                        } catch (puppeteerError) {
-                            console.log('[INFO] Puppeteer executablePath failed:', puppeteerError.message);
-                        }
-                    } catch (installError) {
-                        console.log('[INFO] Puppeteer browser installation failed:', installError.message);
-                    }
-                }
-                
-                if (!foundChromePath) {
-                    console.log('[ERROR] No Chrome executable found for residential proxy authentication');
-                    throw new Error('Chrome executable not found');
-                }
-            } else {
-                // Development environment - use Puppeteer's default
-                foundChromePath = puppeteer.executablePath();
-                console.log(`[INFO] Using Puppeteer's default Chrome path: ${foundChromePath}`);
-            }
+            console.log('[INFO] Starting residential proxy authentication with axios...');
             
             // Parse ResiProx proxy string
             console.log('[INFO] Parsing ResiProx proxy configuration...');
@@ -2174,259 +2077,183 @@ const authService = {
             const proxyUrl = `http://${username}:${password}@${host}:${port}`;
             
             console.log(`[INFO] Using ResiProx proxy: ${host}:${port}`);
+            console.log(`[INFO] Proxy username: ${username}`);
+            console.log(`[INFO] Proxy password: ${password ? '***' : 'not set'}`);
             
-            const launchOptions = {
-                headless: true,
-                executablePath: foundChromePath,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--disable-gpu',
-                    '--disable-background-timer-throttling',
-                    '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding',
-                    '--disable-features=TranslateUI',
-                    '--disable-ipc-flooding-protection',
-                    '--disable-default-apps',
-                    '--disable-extensions',
-                    '--disable-plugins',
-                    '--disable-web-security',
-                    '--disable-features=VizDisplayCompositor',
-                    '--ignore-certificate-errors',
-                    '--ignore-ssl-errors',
-                    '--ignore-certificate-errors-spki-list',
-                    '--disable-blink-features=AutomationControlled',
-                    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    '--window-size=1920,1080',
-                    '--start-maximized',
-                    '--disable-software-rasterizer',
-                    '--disable-background-networking',
-                    '--disable-sync',
-                    '--disable-translate',
-                    '--hide-scrollbars',
-                    '--mute-audio',
-                    '--safebrowsing-disable-auto-update',
-                    '--disable-features=site-per-process',
-                    '--disable-site-isolation-trials',
-                    '--proxy-server=' + proxyUrl
-                ]
-            };
-
-            console.log('[INFO] Launching browser with residential proxy...');
-            browser = await puppeteer.launch(launchOptions);
+            // Import required modules
+            const axios = await import('axios');
+            const { HttpsProxyAgent } = await import('https-proxy-agent');
             
-            console.log('[INFO] Browser launched successfully with residential proxy');
+            // Create proxy agent
+            const proxyAgent = new HttpsProxyAgent(proxyUrl);
             
-            const page = await browser.newPage();
-            
-            // Enhanced stealth techniques
-            await page.evaluateOnNewDocument(() => {
-                // Remove webdriver property
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined,
+            // Test proxy connection first
+            console.log('[INFO] Testing proxy connection...');
+            try {
+                const testResponse = await axios.default.get('https://ipv4.icanhazip.com', {
+                    httpsAgent: proxyAgent,
+                    timeout: 10000
                 });
-                
-                // Override permissions
-                const originalQuery = window.navigator.permissions.query;
-                window.navigator.permissions.query = (parameters) => (
-                    parameters.name === 'notifications' ?
-                        Promise.resolve({ state: Notification.permission }) :
-                        originalQuery(parameters)
-                );
-                
-                // Override plugins
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => [1, 2, 3, 4, 5],
-                });
-                
-                // Override languages
-                Object.defineProperty(navigator, 'languages', {
-                    get: () => ['en-US', 'en'],
-                });
-                
-                // Override chrome
-                window.chrome = {
-                    runtime: {},
-                };
-            });
+                console.log(`[INFO] Proxy test successful! IP: ${testResponse.data.trim()}`);
+            } catch (testError) {
+                console.log('[ERROR] Proxy test failed:', testError.message);
+                throw new Error(`Proxy connection failed: ${testError.message}`);
+            }
             
-            // Set additional headers to look more like a real browser
-            await page.setExtraHTTPHeaders({
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Upgrade-Insecure-Requests': '1',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            });
-
-            console.log('[INFO] Navigating to Alpha.Date login page via residential proxy...');
+            // Now try to authenticate with Alpha.Date using the proxy
+            console.log('[INFO] Attempting Alpha.Date login via residential proxy...');
             
-            // Try multiple navigation strategies for Cloudflare bypass
-            let navigationSuccess = false;
-            let retryCount = 0;
-            const maxRetries = 3;
-            
-            while (!navigationSuccess && retryCount < maxRetries) {
-                try {
-                    console.log(`[INFO] Navigation attempt ${retryCount + 1}/${maxRetries}...`);
-                    
-                    await page.goto('https://alpha.date/login', { 
-                        waitUntil: 'networkidle2',
-                        timeout: 30000 
-                    });
-                    
-                    navigationSuccess = true;
-                    console.log('[INFO] Navigation successful');
-                    
-                } catch (navigationError) {
-                    retryCount++;
-                    console.log(`[INFO] Navigation attempt ${retryCount} failed:`, navigationError.message);
-                    
-                    if (retryCount < maxRetries) {
-                        console.log(`[INFO] Waiting 5 seconds before retry...`);
-                        await this.safeDelay(page, 5000);
-                    }
+            // First, get the login page to get any necessary tokens/cookies
+            const loginPageResponse = await axios.default.get('https://alpha.date/login', {
+                httpsAgent: proxyAgent,
+                timeout: 30000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Upgrade-Insecure-Requests': '1'
                 }
-            }
-            
-            if (!navigationSuccess) {
-                throw new Error('Failed to navigate to Alpha.Date after multiple attempts');
-            }
-
-            // Wait for page to load and check for Cloudflare
-            await this.safeDelay(page, 5000);
-            
-            const currentUrl = page.url();
-            console.log('[INFO] Current URL after navigation:', currentUrl);
-            
-            // Check if we hit a Cloudflare challenge
-            const cloudflareDetected = await page.evaluate(() => {
-                return document.title.includes('Cloudflare') || 
-                       document.body.textContent.includes('Checking your browser') ||
-                       document.body.textContent.includes('Please wait while we verify');
             });
             
-            if (cloudflareDetected) {
-                console.log('[INFO] Cloudflare challenge detected, waiting for manual resolution...');
-                console.log('[INFO] Please manually solve the Cloudflare challenge in the browser window...');
-                
-                // Wait for Cloudflare to be resolved (up to 60 seconds)
-                await page.waitForFunction(() => {
-                    return !document.title.includes('Cloudflare') && 
-                           !document.body.textContent.includes('Checking your browser') &&
-                           !document.body.textContent.includes('Please wait while we verify');
-                }, { timeout: 60000 });
-                
-                console.log('[INFO] Cloudflare challenge appears to be resolved');
+            console.log('[INFO] Login page retrieved successfully');
+            
+            // Extract any CSRF tokens or other necessary data from the login page
+            const loginPageHtml = loginPageResponse.data;
+            
+            // Look for CSRF token or other form data
+            const csrfMatch = loginPageHtml.match(/name="_token"\s+value="([^"]+)"/);
+            const csrfToken = csrfMatch ? csrfMatch[1] : '';
+            
+            if (csrfToken) {
+                console.log('[INFO] Found CSRF token for login form');
             }
-
-            // Handle any popup modals
-            await this.handlePopupModals(page);
-
-            console.log('[INFO] Filling login form...');
             
-            // Wait for login form elements with specific Alpha.Date selectors
-            const emailSelector = 'input[name="login"][data-testid="email"]';
-            const passwordSelector = 'input[name="password"][data-testid="password"]';
-            const submitSelector = 'button[data-testid="submit-btn"]';
+            // Prepare login data
+            const loginData = {
+                login: email,
+                password: password
+            };
             
-            await page.waitForSelector(emailSelector, { timeout: 10000 });
-            await page.waitForSelector(passwordSelector, { timeout: 10000 });
+            if (csrfToken) {
+                loginData._token = csrfToken;
+            }
             
-            // Fill in the form
-            await page.type(emailSelector, email);
-            await page.type(passwordSelector, password);
+            // Attempt login
+            console.log('[INFO] Submitting login form...');
+            const loginResponse = await axios.default.post('https://alpha.date/login', loginData, {
+                httpsAgent: proxyAgent,
+                timeout: 30000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/json, text/plain, */*',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Origin': 'https://alpha.date',
+                    'Referer': 'https://alpha.date/login',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                    'Sec-Fetch-Dest': 'empty',
+                    'Sec-Fetch-Mode': 'cors',
+                    'Sec-Fetch-Site': 'same-origin'
+                },
+                maxRedirects: 5,
+                validateStatus: function (status) {
+                    return status >= 200 && status < 400; // Accept redirects
+                }
+            });
             
-            // Click submit button
-            await page.click(submitSelector);
-            
-            // Wait for navigation or response
-            await this.safeDelay(page, 5000);
+            console.log('[INFO] Login response status:', loginResponse.status);
+            console.log('[INFO] Login response headers:', Object.keys(loginResponse.headers));
             
             // Check if login was successful
-            const loginSuccess = await page.evaluate(() => {
-                // Check for error messages
-                const errorElements = document.querySelectorAll('.error, .alert, .message, [class*="error"], [class*="alert"]');
-                for (const element of errorElements) {
-                    if (element.textContent.toLowerCase().includes('invalid') || 
-                        element.textContent.toLowerCase().includes('incorrect') ||
-                        element.textContent.toLowerCase().includes('failed')) {
-                        return false;
+            if (loginResponse.status === 200 || loginResponse.status === 302) {
+                console.log('[INFO] Login appears successful');
+                
+                // Extract cookies from response
+                const cookies = loginResponse.headers['set-cookie'];
+                if (cookies) {
+                    console.log('[INFO] Received cookies from login response');
+                }
+                
+                // Try to extract token from response or cookies
+                let token = null;
+                
+                // Check if response contains JSON with token
+                if (loginResponse.data && typeof loginResponse.data === 'object' && loginResponse.data.token) {
+                    token = loginResponse.data.token;
+                    console.log('[INFO] Token found in response data');
+                } else if (cookies) {
+                    // Look for token in cookies
+                    const tokenCookie = cookies.find(cookie => 
+                        cookie.includes('token=') || 
+                        cookie.includes('auth=') || 
+                        cookie.includes('session=')
+                    );
+                    if (tokenCookie) {
+                        const tokenMatch = tokenCookie.match(/(?:token|auth|session)=([^;]+)/);
+                        if (tokenMatch) {
+                            token = tokenMatch[1];
+                            console.log('[INFO] Token found in cookies');
+                        }
                     }
                 }
                 
-                // Check if we're redirected to dashboard or main page
-                return window.location.href.includes('/dashboard') || 
-                       window.location.href.includes('/profile') ||
-                       !window.location.href.includes('/login');
-            });
-            
-            if (!loginSuccess) {
-                throw new Error('Login failed - invalid credentials or login form not found');
-            }
-            
-            console.log('[INFO] Login successful via residential proxy');
-            
-            // Extract token from cookies or localStorage
-            const token = await page.evaluate(() => {
-                // Try to get token from localStorage
-                const localToken = localStorage.getItem('token') || localStorage.getItem('authToken') || localStorage.getItem('accessToken');
-                if (localToken) return localToken;
-                
-                // Try to get token from sessionStorage
-                const sessionToken = sessionStorage.getItem('token') || sessionStorage.getItem('authToken') || sessionStorage.getItem('accessToken');
-                if (sessionToken) return localToken;
-                
-                // Try to get token from cookies
-                const cookies = document.cookie.split(';');
-                for (const cookie of cookies) {
-                    const [name, value] = cookie.trim().split('=');
-                    if (name === 'token' || name === 'authToken' || name === 'accessToken') {
-                        return value;
+                if (!token) {
+                    // Try to get token from a subsequent API call
+                    console.log('[INFO] Attempting to get token from API...');
+                    try {
+                        const tokenResponse = await axios.default.get('https://alpha.date/api/user', {
+                            httpsAgent: proxyAgent,
+                            timeout: 10000,
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                                'Accept': 'application/json',
+                                'Cookie': cookies ? cookies.join('; ') : ''
+                            }
+                        });
+                        
+                        if (tokenResponse.data && tokenResponse.data.token) {
+                            token = tokenResponse.data.token;
+                            console.log('[INFO] Token retrieved from API');
+                        }
+                    } catch (tokenError) {
+                        console.log('[INFO] Could not retrieve token from API:', tokenError.message);
                     }
                 }
                 
-                return null;
-            });
-            
-            if (!token) {
-                throw new Error('Could not extract authentication token');
+                if (token) {
+                    // Extract operator ID from token
+                    const operatorId = await this.extractOperatorId(null, token);
+                    
+                    console.log('[INFO] Authentication successful via residential proxy');
+                    
+                    return {
+                        success: true,
+                        token,
+                        operatorId,
+                        sessionId: null, // No browser session with axios approach
+                        message: 'Authentication successful via residential proxy with axios'
+                    };
+                } else {
+                    throw new Error('Login successful but could not extract authentication token');
+                }
+            } else {
+                throw new Error(`Login failed with status: ${loginResponse.status}`);
             }
-            
-            // Extract operator ID
-            const operatorId = await this.extractOperatorId(page, token);
-            
-            console.log('[INFO] Authentication successful via residential proxy');
-            
-            // Store browser session
-            const sessionId = await browserSessionManager.storeBrowserSession(browser, page, email, token, operatorId);
-            
-            return {
-                success: true,
-                token,
-                operatorId,
-                sessionId,
-                message: 'Authentication successful via residential proxy'
-            };
             
         } catch (error) {
             console.error('[ERROR] Residential proxy authentication error:', error);
             
             // Fallback to API method
             console.log('[INFO] Falling back to API authentication method...');
-            if (browser) {
-                await browser.close();
-            }
             return await this.authenticateWithAPI(email, password);
         }
     }
