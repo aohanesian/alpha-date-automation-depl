@@ -23,6 +23,6 @@ services:
       - key: USE_PROXY
         value: "true"
       - key: PROXY_HOST
-        value: "172.64.48.37"
+        value: "164.163.42.38"
       - key: PROXY_PORT
-        value: "80"
+        value: "10000"

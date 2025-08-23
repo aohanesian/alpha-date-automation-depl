@@ -201,8 +201,8 @@ const authService = {
             console.log('[INFO] Attempting to authenticate with Alpha.Date using Puppeteer with stealth plugin');
             
             // Check if proxy is configured and use it for better Cloudflare bypass
-            const proxyHost = process.env.PROXY_HOST || '51.79.50.22';
-            const proxyPort = process.env.PROXY_PORT || '9300';
+            const proxyHost = process.env.PROXY_HOST || '164.163.42.38';
+            const proxyPort = process.env.PROXY_PORT || '10000';
             const useProxy = process.env.USE_PROXY === 'true' || process.env.NODE_ENV === 'production';
             
             if (useProxy) {
@@ -1107,10 +1107,10 @@ const authService = {
 
                     console.log('[INFO] Filling login form...');
                     
-                    // Wait for login form elements with multiple selectors
-                    const emailSelector = 'input[name="login"], input[data-testid="email"], input[type="email"], input[placeholder*="email"]';
-                    const passwordSelector = 'input[name="password"], input[data-testid="password"], input[type="password"]';
-                    const submitSelector = 'button[type="submit"], button[data-testid="submit-btn"], input[type="submit"], button:contains("Log in"), button:contains("Sign in")';
+                    // Wait for login form elements with specific Alpha.Date selectors
+                    const emailSelector = 'input[name="login"][data-testid="email"]';
+                    const passwordSelector = 'input[name="password"][data-testid="password"]';
+                    const submitSelector = 'button[data-testid="submit-btn"]';
                     
                     await page.waitForSelector(emailSelector, { timeout: 10000 });
                     await page.waitForSelector(passwordSelector, { timeout: 10000 });
@@ -1119,8 +1119,29 @@ const authService = {
                     await page.type(emailSelector, email);
                     await page.type(passwordSelector, password);
                     
-                    // Click submit button
-                    await page.click(submitSelector);
+                    // Click submit button - try multiple approaches
+                    try {
+                        await page.click(submitSelector);
+                    } catch (clickError) {
+                        console.log('[INFO] Direct click failed, trying to find button by text content...');
+                        
+                        // Try to find button by text content
+                        const submitButton = await page.evaluateHandle(() => {
+                            const buttons = Array.from(document.querySelectorAll('button'));
+                            const submitButton = buttons.find(button => {
+                                const text = button.textContent.trim().toLowerCase();
+                                return text.includes('log in') || text.includes('sign in') || text.includes('login') || text.includes('submit');
+                            });
+                            return submitButton;
+                        });
+                        
+                        if (submitButton) {
+                            await submitButton.click();
+                            console.log('[INFO] Submit button clicked via text content search');
+                        } else {
+                            throw new Error('Could not find submit button');
+                        }
+                    }
                     
                     // Wait for navigation or response
                     await this.safeDelay(page, 5000);
@@ -1435,10 +1456,10 @@ const authService = {
 
             console.log('[INFO] Filling login form...');
             
-            // Wait for login form elements with multiple selectors
-            const emailSelector = 'input[name="login"], input[data-testid="email"], input[type="email"], input[placeholder*="email"]';
-            const passwordSelector = 'input[name="password"], input[data-testid="password"], input[type="password"]';
-            const submitSelector = 'button[type="submit"], button[data-testid="submit-btn"], input[type="submit"], button:contains("Log in"), button:contains("Sign in")';
+            // Wait for login form elements with specific Alpha.Date selectors
+            const emailSelector = 'input[name="login"][data-testid="email"]';
+            const passwordSelector = 'input[name="password"][data-testid="password"]';
+            const submitSelector = 'button[data-testid="submit-btn"]';
             
             await page.waitForSelector(emailSelector, { timeout: 10000 });
             await page.waitForSelector(passwordSelector, { timeout: 10000 });
@@ -1447,8 +1468,29 @@ const authService = {
             await page.type(emailSelector, email);
             await page.type(passwordSelector, password);
             
-            // Click submit button
-            await page.click(submitSelector);
+            // Click submit button - try multiple approaches
+            try {
+                await page.click(submitSelector);
+            } catch (clickError) {
+                console.log('[INFO] Direct click failed, trying to find button by text content...');
+                
+                // Try to find button by text content
+                const submitButton = await page.evaluateHandle(() => {
+                    const buttons = Array.from(document.querySelectorAll('button'));
+                    const submitButton = buttons.find(button => {
+                        const text = button.textContent.trim().toLowerCase();
+                        return text.includes('log in') || text.includes('sign in') || text.includes('login') || text.includes('submit');
+                    });
+                    return submitButton;
+                });
+                
+                if (submitButton) {
+                    await submitButton.click();
+                    console.log('[INFO] Submit button clicked via text content search');
+                } else {
+                    throw new Error('Could not find submit button');
+                }
+            }
             
             // Wait for navigation or response
             await this.safeDelay(page, 5000);
