@@ -33,6 +33,7 @@
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "https-proxy-agent": "^7.0.4",
+    "axios": "^1.7.9",
     "vite": "^6.3.5"
   },
   "devDependencies": {
