@@ -200,10 +200,10 @@ const authService = {
         try {
             console.log('[INFO] Attempting to authenticate with Alpha.Date using Puppeteer with stealth plugin');
             
-            // Check if proxy is configured and use it for better Cloudflare bypass
+            // Check if we should use proxy (disabled for Render due to network restrictions)
             const proxyHost = process.env.PROXY_HOST || '164.163.42.38';
             const proxyPort = process.env.PROXY_PORT || '10000';
-            const useProxy = process.env.USE_PROXY === 'true' || process.env.NODE_ENV === 'production';
+            const useProxy = process.env.USE_PROXY === 'true' && process.env.NODE_ENV !== 'production';
             
             if (useProxy) {
                 console.log(`[INFO] Using proxy ${proxyHost}:${proxyPort} for Cloudflare bypass...`);
@@ -213,6 +213,9 @@ const authService = {
                     console.log('[INFO] Proxy authentication failed, trying direct connection...');
                     return await this.authenticateWithDirectConnection(email, password);
                 }
+            } else {
+                console.log('[INFO] Using direct connection with enhanced stealth for Cloudflare bypass...');
+                return await this.authenticateWithDirectConnection(email, password);
             }
             
             // Check if we're in production and if Puppeteer is available
@@ -1365,14 +1368,38 @@ const authService = {
                     '--disable-default-apps',
                     '--disable-extensions',
                     '--disable-plugins',
-                    '--disable-images',
-                    '--disable-javascript',
                     '--disable-web-security',
                     '--disable-features=VizDisplayCompositor',
                     '--ignore-certificate-errors',
                     '--ignore-ssl-errors',
                     '--ignore-certificate-errors-spki-list',
-                    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    '--disable-blink-features=AutomationControlled',
+                    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    '--window-size=1920,1080',
+                    '--start-maximized',
+                    '--disable-software-rasterizer',
+                    '--disable-background-networking',
+                    '--disable-sync',
+                    '--disable-translate',
+                    '--hide-scrollbars',
+                    '--mute-audio',
+                    '--safebrowsing-disable-auto-update',
+                    '--disable-features=site-per-process',
+                    '--disable-site-isolation-trials',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor',
+                    '--disable-ipc-flooding-protection',
+                    '--disable-renderer-backgrounding',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-background-timer-throttling',
+                    '--disable-features=TranslateUI',
+                    '--disable-ipc-flooding-protection',
+                    '--disable-default-apps',
+                    '--disable-extensions',
+                    '--disable-plugins',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor',
+                    '--disable-blink-features=AutomationControlled'
                 ]
             };
 
@@ -1382,6 +1409,37 @@ const authService = {
             console.log('[INFO] Browser launched successfully with direct connection');
             
             const page = await browser.newPage();
+            
+            // Enhanced stealth techniques
+            await page.evaluateOnNewDocument(() => {
+                // Remove webdriver property
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                });
+                
+                // Override permissions
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                        Promise.resolve({ state: Notification.permission }) :
+                        originalQuery(parameters)
+                );
+                
+                // Override plugins
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5],
+                });
+                
+                // Override languages
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en'],
+                });
+                
+                // Override chrome
+                window.chrome = {
+                    runtime: {},
+                };
+            });
             
             // Set additional headers to look more like a real browser
             await page.setExtraHTTPHeaders({
@@ -1394,17 +1452,46 @@ const authService = {
                 'Sec-Fetch-Mode': 'navigate',
                 'Sec-Fetch-Site': 'none',
                 'Sec-Fetch-User': '?1',
-                'Upgrade-Insecure-Requests': '1'
+                'Upgrade-Insecure-Requests': '1',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             });
 
             console.log('[INFO] Navigating to Alpha.Date login page via direct connection...');
-            await page.goto('https://alpha.date/login', { 
-                waitUntil: 'networkidle2',
-                timeout: 30000 
-            });
+            
+            // Try multiple navigation strategies for Cloudflare bypass
+            let navigationSuccess = false;
+            let retryCount = 0;
+            const maxRetries = 3;
+            
+            while (!navigationSuccess && retryCount < maxRetries) {
+                try {
+                    console.log(`[INFO] Navigation attempt ${retryCount + 1}/${maxRetries}...`);
+                    
+                    await page.goto('https://alpha.date/login', { 
+                        waitUntil: 'networkidle2',
+                        timeout: 30000 
+                    });
+                    
+                    navigationSuccess = true;
+                    console.log('[INFO] Navigation successful');
+                    
+                } catch (navigationError) {
+                    retryCount++;
+                    console.log(`[INFO] Navigation attempt ${retryCount} failed:`, navigationError.message);
+                    
+                    if (retryCount < maxRetries) {
+                        console.log(`[INFO] Waiting 5 seconds before retry...`);
+                        await this.safeDelay(page, 5000);
+                    }
+                }
+            }
+            
+            if (!navigationSuccess) {
+                throw new Error('Failed to navigate to Alpha.Date after multiple attempts');
+            }
 
             // Wait for page to load and check for Cloudflare
-            await this.safeDelay(page, 3000);
+            await this.safeDelay(page, 5000);
             
             const currentUrl = page.url();
             console.log('[INFO] Current URL after navigation:', currentUrl);
