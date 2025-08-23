@@ -865,6 +865,20 @@ const authService = {
         }
     },
 
+    // Helper function for delays that works with or without waitForTimeout
+    async safeDelay(page, ms) {
+        try {
+            if (typeof page.waitForTimeout === 'function') {
+                await page.waitForTimeout(ms);
+            } else {
+                await new Promise(resolve => setTimeout(resolve, ms));
+            }
+        } catch (error) {
+            console.log('[INFO] Delay failed, using setTimeout fallback');
+            await new Promise(resolve => setTimeout(resolve, ms));
+        }
+    },
+
     async authenticateWithProxy(email, password, proxyHost, proxyPort) {
         let browser = null;
         
@@ -1014,8 +1028,18 @@ const authService = {
                     }
                     
                     // Verify page is properly initialized
-                    if (!page || typeof page.waitForTimeout !== 'function') {
-                        throw new Error('Page object not properly initialized');
+                    if (!page) {
+                        throw new Error('Page object is null or undefined');
+                    }
+                    
+                    // Check if page has basic functionality
+                    if (typeof page.goto !== 'function') {
+                        throw new Error('Page object missing goto function');
+                    }
+                    
+                    // Check for waitForTimeout function, but don't fail if it's missing
+                    if (typeof page.waitForTimeout !== 'function') {
+                        console.log('[INFO] waitForTimeout not available, will use alternative delays');
                     }
                     
                     // Set additional headers to look more like a real browser
@@ -1051,13 +1075,8 @@ const authService = {
                         timeout: 30000 
                     });
 
-                                // Wait for page to load and check for Cloudflare
-            try {
-                await page.waitForTimeout(3000);
-            } catch (timeoutError) {
-                console.log('[INFO] waitForTimeout not available, using alternative delay');
-                await new Promise(resolve => setTimeout(resolve, 3000));
-            }
+                    // Wait for page to load and check for Cloudflare
+                    await this.safeDelay(page, 3000);
                     
                     const currentUrl = page.url();
                     console.log('[INFO] Current URL after navigation:', currentUrl);
@@ -1104,12 +1123,7 @@ const authService = {
                     await page.click(submitSelector);
                     
                     // Wait for navigation or response
-                    try {
-                        await page.waitForTimeout(5000);
-                    } catch (timeoutError) {
-                        console.log('[INFO] waitForTimeout not available, using alternative delay');
-                        await new Promise(resolve => setTimeout(resolve, 5000));
-                    }
+                    await this.safeDelay(page, 5000);
                     
                     // Check if login was successful
                     const loginSuccess = await page.evaluate(() => {
@@ -1390,12 +1404,7 @@ const authService = {
             });
 
             // Wait for page to load and check for Cloudflare
-            try {
-                await page.waitForTimeout(3000);
-            } catch (timeoutError) {
-                console.log('[INFO] waitForTimeout not available, using alternative delay');
-                await new Promise(resolve => setTimeout(resolve, 3000));
-            }
+            await this.safeDelay(page, 3000);
             
             const currentUrl = page.url();
             console.log('[INFO] Current URL after navigation:', currentUrl);
@@ -1442,12 +1451,7 @@ const authService = {
             await page.click(submitSelector);
             
             // Wait for navigation or response
-            try {
-                await page.waitForTimeout(5000);
-            } catch (timeoutError) {
-                console.log('[INFO] waitForTimeout not available, using alternative delay');
-                await new Promise(resolve => setTimeout(resolve, 5000));
-            }
+            await this.safeDelay(page, 5000);
             
             // Check if login was successful
             const loginSuccess = await page.evaluate(() => {
