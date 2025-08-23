@@ -996,11 +996,27 @@ const authService = {
                     };
 
                     console.log('[INFO] Launching browser with proxy configuration...');
-                    browser = await puppeteer.launch(launchOptions);
+                    try {
+                        browser = await puppeteer.launch(launchOptions);
+                        console.log('[INFO] Browser launched successfully with proxy');
+                    } catch (launchError) {
+                        console.log('[INFO] Browser launch failed with proxy:', launchError.message);
+                        throw new Error(`Browser launch failed: ${launchError.message}`);
+                    }
                     
-                    console.log('[INFO] Browser launched successfully with proxy');
+                    let page;
+                    try {
+                        page = await browser.newPage();
+                        console.log('[INFO] Page created successfully');
+                    } catch (pageError) {
+                        console.log('[INFO] Page creation failed:', pageError.message);
+                        throw new Error(`Page creation failed: ${pageError.message}`);
+                    }
                     
-                    const page = await browser.newPage();
+                    // Verify page is properly initialized
+                    if (!page || typeof page.waitForTimeout !== 'function') {
+                        throw new Error('Page object not properly initialized');
+                    }
                     
                     // Set additional headers to look more like a real browser
                     await page.setExtraHTTPHeaders({
@@ -1017,13 +1033,31 @@ const authService = {
                     });
 
                     console.log('[INFO] Navigating to Alpha.Date login page via proxy...');
+                    
+                    // Test the connection first with a simple page
+                    try {
+                        await page.goto('https://httpbin.org/ip', { 
+                            waitUntil: 'networkidle2',
+                            timeout: 15000 
+                        });
+                        console.log('[INFO] Proxy connection test successful');
+                    } catch (connectionError) {
+                        console.log('[INFO] Proxy connection test failed:', connectionError.message);
+                        throw new Error(`Proxy connection failed: ${connectionError.message}`);
+                    }
+                    
                     await page.goto('https://alpha.date/login', { 
                         waitUntil: 'networkidle2',
                         timeout: 30000 
                     });
 
-                    // Wait for page to load and check for Cloudflare
-                    await page.waitForTimeout(3000);
+                                // Wait for page to load and check for Cloudflare
+            try {
+                await page.waitForTimeout(3000);
+            } catch (timeoutError) {
+                console.log('[INFO] waitForTimeout not available, using alternative delay');
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
                     
                     const currentUrl = page.url();
                     console.log('[INFO] Current URL after navigation:', currentUrl);
@@ -1070,7 +1104,12 @@ const authService = {
                     await page.click(submitSelector);
                     
                     // Wait for navigation or response
-                    await page.waitForTimeout(5000);
+                    try {
+                        await page.waitForTimeout(5000);
+                    } catch (timeoutError) {
+                        console.log('[INFO] waitForTimeout not available, using alternative delay');
+                        await new Promise(resolve => setTimeout(resolve, 5000));
+                    }
                     
                     // Check if login was successful
                     const loginSuccess = await page.evaluate(() => {
@@ -1351,7 +1390,12 @@ const authService = {
             });
 
             // Wait for page to load and check for Cloudflare
-            await page.waitForTimeout(3000);
+            try {
+                await page.waitForTimeout(3000);
+            } catch (timeoutError) {
+                console.log('[INFO] waitForTimeout not available, using alternative delay');
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
             
             const currentUrl = page.url();
             console.log('[INFO] Current URL after navigation:', currentUrl);
@@ -1398,7 +1442,12 @@ const authService = {
             await page.click(submitSelector);
             
             // Wait for navigation or response
-            await page.waitForTimeout(5000);
+            try {
+                await page.waitForTimeout(5000);
+            } catch (timeoutError) {
+                console.log('[INFO] waitForTimeout not available, using alternative delay');
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
             
             // Check if login was successful
             const loginSuccess = await page.evaluate(() => {
