@@ -21,8 +21,12 @@ services:
       - key: PUPPETEER_ARGS
         value: "--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu"
       - key: USE_PROXY
-        value: "true"
+        value: "false"
       - key: PROXY_HOST
         value: "164.163.42.38"
       - key: PROXY_PORT
         value: "10000"
+      - key: USE_RESIDENTIAL_PROXY
+        value: "true"
+      - key: RESIPROX_PROXY_STRING
+        sync: false
