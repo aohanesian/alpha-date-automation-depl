@@ -1,7 +1,6 @@
 // controllers/authController.js
 import express from 'express';
 import authService from '../services/authService.js';
-import zenrowsAuthService from '../services/zenrowsAuthService.js';
 import browserSessionManager from '../services/browserSessionManager.js';
 import fs from 'fs';
 import path from 'path';
@@ -99,24 +98,8 @@ router.post('/alpha-login', async (req, res) => {
 
         console.log('Alpha.Date login attempt for:', email);
 
-        // Step 1: Attempt Alpha.Date authentication with ZenRows (cost-effective)
-        let authResult;
-        
-        // Try ZenRows first (more reliable but costs money)
-        if (process.env.USE_ZENROWS === 'true') {
-            console.log('[AUTH] Attempting authentication with ZenRows...');
-            authResult = await zenrowsAuthService.authenticateWithAlphaDate(email, password);
-            
-            if (!authResult.success) {
-                console.log('[AUTH] ZenRows failed, trying regular proxy...');
-                // Fallback to regular proxy
-                authResult = await zenrowsAuthService.authenticateWithProxy(email, password);
-            }
-        } else {
-            // Use regular proxy directly
-            console.log('[AUTH] Using regular proxy for authentication...');
-            authResult = await zenrowsAuthService.authenticateWithProxy(email, password);
-        }
+        // Step 1: Attempt Alpha.Date authentication
+        const authResult = await authService.authenticateWithAlphaDate(email, password);
 
         if (!authResult.success) {
             // Check if it's a Cloudflare challenge

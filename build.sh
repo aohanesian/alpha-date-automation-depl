@@ -84,10 +84,6 @@ npm run test:chrome || echo "Chrome test failed, but continuing build"
 echo "Testing API functionality..."
 npm run test:api || echo "API test failed, but continuing build"
 
-# Test ZenRows functionality (non-blocking)
-echo "Testing ZenRows functionality..."
-npm run test:zenrows || echo "ZenRows test failed, but continuing build"
-
 # Build the application
 echo "Building application..."
 npm run build
