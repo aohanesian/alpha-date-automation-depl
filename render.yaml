@@ -20,13 +20,7 @@ services:
         value: "true"
       - key: PUPPETEER_ARGS
         value: "--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu"
-      - key: USE_PROXY
-        value: "false"
-      - key: PROXY_HOST
-        value: "164.163.42.38"
-      - key: PROXY_PORT
-        value: "10000"
-      - key: USE_RESIDENTIAL_PROXY
+      - key: USE_ZENROWS
         value: "true"
-      - key: RESIPROX_PROXY_STRING
-        sync: false
+      - key: ZENROWS_API_KEY
+        value: "a99283cb465506ebb89875eeff4df36020d71c7b"
