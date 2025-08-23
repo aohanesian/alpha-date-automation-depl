@@ -2063,48 +2063,103 @@ const authService = {
 
     async authenticateWithResidentialProxy(email, password, apiKey) {
         let browser = null;
+        let foundChromePath = null;
         
         try {
             console.log('[INFO] Starting residential proxy authentication...');
             
-            // Find Chrome executable path first
-            let foundChromePath = null;
-            const { existsSync } = await import('fs');
-            const { execSync } = await import('child_process');
-            
-            // Try to find Chrome using system commands
-            let systemChromePath = null;
-            try {
-                systemChromePath = execSync('which google-chrome', { encoding: 'utf8' }).trim();
-            } catch (err) {
-                console.log('[INFO] google-chrome not found in PATH');
-            }
-            
-            const possiblePaths = [
-                process.env.PUPPETEER_EXECUTABLE_PATH,
-                systemChromePath,
-                '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
-                '/opt/render/.cache/puppeteer/chrome-linux/chrome',
-                '/usr/bin/google-chrome-stable',
-                '/usr/bin/google-chrome',
-                '/usr/bin/chromium-browser',
-                '/usr/bin/chromium'
-            ].filter(Boolean);
-            
-            console.log('[INFO] Checking Chrome paths for residential proxy authentication...');
-            for (const path of possiblePaths) {
-                if (existsSync(path)) {
-                    foundChromePath = path;
-                    console.log(`[INFO] Found Chrome at: ${path}`);
-                    break;
-                } else {
-                    console.log(`[INFO] Chrome not found at: ${path}`);
+            // Use the same Chrome detection logic as the main function
+            if (process.env.NODE_ENV === 'production') {
+                console.log('[INFO] Production environment detected, checking Chrome availability...');
+                console.log('[INFO] PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH);
+                console.log('[INFO] PUPPETEER_CACHE_DIR:', process.env.PUPPETEER_CACHE_DIR);
+                
+                // First, try to find the correct Chrome path
+                const { existsSync } = await import('fs');
+                const { execSync } = await import('child_process');
+                
+                // Try to find Chrome using system commands
+                let systemChromePath = null;
+                try {
+                    systemChromePath = execSync('which google-chrome', { encoding: 'utf8' }).trim();
+                } catch (err) {
+                    console.log('[INFO] google-chrome not found in PATH');
                 }
-            }
-            
-            if (!foundChromePath) {
-                console.log('[ERROR] No Chrome executable found for residential proxy authentication');
-                throw new Error('Chrome executable not found');
+                
+                const possiblePaths = [
+                    process.env.PUPPETEER_EXECUTABLE_PATH,
+                    systemChromePath,
+                    '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
+                    '/opt/render/.cache/puppeteer/chrome-linux/chrome',
+                    '/usr/bin/google-chrome-stable',
+                    '/usr/bin/google-chrome',
+                    '/usr/bin/chromium-browser',
+                    '/usr/bin/chromium'
+                ].filter(Boolean);
+                
+                console.log('[INFO] Checking Chrome paths for residential proxy authentication...');
+                for (const path of possiblePaths) {
+                    if (existsSync(path)) {
+                        foundChromePath = path;
+                        console.log(`[INFO] Found Chrome at: ${path}`);
+                        break;
+                    } else {
+                        console.log(`[INFO] Chrome not found at: ${path}`);
+                    }
+                }
+                
+                // If still not found, try to search the filesystem
+                if (!foundChromePath) {
+                    console.log('[INFO] Searching filesystem for Chrome...');
+                    try {
+                        // First try to find the actual Chrome binary
+                        let searchResult = execSync('find /opt -name "chrome" -type f -executable 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
+                        if (searchResult && existsSync(searchResult)) {
+                            foundChromePath = searchResult;
+                            console.log(`[INFO] Found Chrome binary via filesystem search: ${searchResult}`);
+                        } else {
+                            // Fallback to broader search, excluding shell scripts
+                            searchResult = execSync('find /opt -name "*chrome*" -type f -executable -not -name "*.sh" 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
+                            if (searchResult && existsSync(searchResult)) {
+                                foundChromePath = searchResult;
+                                console.log(`[INFO] Found Chrome via filesystem search: ${searchResult}`);
+                            }
+                        }
+                    } catch (err) {
+                        console.log('[INFO] Filesystem search failed:', err.message);
+                    }
+                }
+                
+                // If still not found, try to install Puppeteer browsers
+                if (!foundChromePath) {
+                    console.log('[INFO] Chrome not found, attempting to install Puppeteer browsers...');
+                    try {
+                        // Install Puppeteer browsers
+                        execSync('npx puppeteer browsers install chrome --force', { stdio: 'pipe' });
+                        
+                        // Check if installation was successful
+                        try {
+                            const puppeteerPath = puppeteer.executablePath();
+                            if (puppeteerPath && existsSync(puppeteerPath)) {
+                                foundChromePath = puppeteerPath;
+                                console.log(`[INFO] Found Chrome via Puppeteer installation: ${puppeteerPath}`);
+                            }
+                        } catch (puppeteerError) {
+                            console.log('[INFO] Puppeteer executablePath failed:', puppeteerError.message);
+                        }
+                    } catch (installError) {
+                        console.log('[INFO] Puppeteer browser installation failed:', installError.message);
+                    }
+                }
+                
+                if (!foundChromePath) {
+                    console.log('[ERROR] No Chrome executable found for residential proxy authentication');
+                    throw new Error('Chrome executable not found');
+                }
+            } else {
+                // Development environment - use Puppeteer's default
+                foundChromePath = puppeteer.executablePath();
+                console.log(`[INFO] Using Puppeteer's default Chrome path: ${foundChromePath}`);
             }
             
             // Parse ResiProx proxy string
