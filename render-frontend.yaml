@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: alpha-date-automation-frontend
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npx serve -s dist -l $PORT
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_API_URL
+        value: https://your-ngrok-url.ngrok.io  # Update this with your ngrok URL
+      - key: VITE_ATTACHMENT_FOLDER_NAME
+        value: send
