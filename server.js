@@ -113,6 +113,7 @@ app.use(cors({
             'https://www.alpha-bot.date',
             'https://alpha-bot.date',
             process.env.VITE_API_URL,
+            'https://alpha-date-automation-delp.loca.lt',
         ];
 
         if (allowedOrigins.indexOf(origin) !== -1) {
