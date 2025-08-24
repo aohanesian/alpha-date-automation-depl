@@ -64,3 +64,4 @@ Monitor the application logs for:
 - First deployment may take longer due to Chrome installation
 - Subsequent deployments are faster
 - API fallback ensures the application remains functional even if Puppeteer fails
+
