@@ -202,7 +202,7 @@ const authService = {
             
             // Check if ZenRows is configured and use it for better Cloudflare bypass
             const zenRowsApiKey = process.env.ZENROWS_API_KEY || 'a99283cb465506ebb89875eeff4df36020d71c7b';
-            const useZenRows = process.env.USE_ZENROWS === 'true' || process.env.NODE_ENV === 'production';
+            const useZenRows = process.env.USE_ZENROWS === 'true';
             
             if (useZenRows) {
                 console.log('[INFO] Using ZenRows for Cloudflare bypass...');
