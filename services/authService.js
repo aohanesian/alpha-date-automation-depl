@@ -193,12 +193,12 @@ const authService = {
         return Array.from(processingProfiles);
     },
 
-    async authenticateWithAlphaDate(email, password) {
+    async authenticateWithAlphaDate(email, password, sessionId = null) {
         let browser = null;
         let foundChromePath = null;
         
         try {
-            console.log('[INFO] Attempting to authenticate with Alpha.Date using Puppeteer with stealth plugin');
+            console.log(`[INFO] Attempting to authenticate with Alpha.Date using Puppeteer with stealth plugin for user: ${email}`);
             
             // Check if ZenRows is configured and use it for better Cloudflare bypass
             const zenRowsApiKey = process.env.ZENROWS_API_KEY || 'a99283cb465506ebb89875eeff4df36020d71c7b';
@@ -367,6 +367,11 @@ const authService = {
                 console.log(`[INFO] Using found Chrome executable for main launch: ${foundChromePath}`);
             }
 
+            // Create unique user data directory for each session to avoid conflicts
+            const userDataDir = sessionId ? `/tmp/chrome-user-${sessionId}` : `/tmp/chrome-user-${Date.now()}`;
+            launchOptions.userDataDir = userDataDir;
+            
+            console.log(`[INFO] Launching Chrome instance for user ${email} with user data dir: ${userDataDir}`);
             browser = await puppeteer.launch(launchOptions);
 
             const page = await browser.newPage();
@@ -591,6 +596,12 @@ const authService = {
                     createdAt: Date.now()
                 };
                 
+                // Store the session in the browser session manager for multi-user support
+                if (sessionId) {
+                    browserSessionManager.storeSession(sessionId, browserSession, email);
+                    console.log(`[INFO] Browser session stored for user ${email} with session ID: ${sessionId}`);
+                }
+                
                 // Don't close the browser - keep it alive for API calls
                 return {
                     success: true,
@@ -798,6 +809,12 @@ const authService = {
                     email: email,
                     createdAt: Date.now()
                 };
+                
+                // Store the session in the browser session manager for multi-user support
+                if (sessionId) {
+                    browserSessionManager.storeSession(sessionId, browserSession, email);
+                    console.log(`[INFO] Browser session stored for user ${email} with session ID: ${sessionId}`);
+                }
                 
                 // Don't close the browser - keep it alive for API calls
                 return {

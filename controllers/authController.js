@@ -98,8 +98,8 @@ router.post('/alpha-login', async (req, res) => {
 
         console.log('Alpha.Date login attempt for:', email);
 
-        // Step 1: Attempt Alpha.Date authentication
-        const authResult = await authService.authenticateWithAlphaDate(email, password);
+        // Step 1: Attempt Alpha.Date authentication with session ID for multi-user support
+        const authResult = await authService.authenticateWithAlphaDate(email, password, req.sessionID);
 
         if (!authResult.success) {
             // Check if it's a Cloudflare challenge
