@@ -130,7 +130,7 @@ const mailService = {
                 let data = null;
                 
                 // Try browser session first if available
-                if (browserSession && browserSession.page && !browserSession.page.isClosed()) {
+                if (browserSession && browserSession.page) {
                     try {
                         console.log(`[MAIL SERVICE] Getting ${type} via browser session for profile ${profileId}...`);
                         data = await this.makeApiCallFromBrowser(
@@ -341,7 +341,7 @@ const mailService = {
                     pageClosed: browserSession?.page?.isClosed?.() || 'unknown'
                 });
                 
-                if (browserSession && browserSession.page && !browserSession.page.isClosed()) {
+                if (browserSession && browserSession.page) {
                     try {
                         console.log(`[MAIL SERVICE] Fetching mail chats via browser session for profile ${profileId}...`);
                         browserData = await this.makeApiCallFromBrowser(
@@ -501,7 +501,7 @@ const mailService = {
             let data;
             
             // Try browser session first if available
-            if (browserSession && browserSession.page && !browserSession.page.isClosed()) {
+            if (browserSession && browserSession.page) {
                 try {
                     console.log(`[MAIL SERVICE] Fetching last messages via browser session...`);
                     data = await this.makeApiCallFromBrowser(
@@ -616,7 +616,7 @@ const mailService = {
             let mailData;
             
             // Try browser session first if available
-            if (browserSession && browserSession.page && !browserSession.page.isClosed()) {
+            if (browserSession && browserSession.page) {
                 try {
                     console.log(`[MAIL SERVICE] Sending mail via browser session...`);
                     mailData = await this.makeApiCallFromBrowser(

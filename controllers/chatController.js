@@ -34,10 +34,10 @@ function extractToken(req, res, next) {
                     req.operatorId = sessionData.operatorId;
                     // Also set session email for browser session lookup
                     req.session.email = sessionData.email;
-                    console.log('Token from session store:', req.token, 'OperatorId:', req.operatorId, 'Email:', req.userEmail);
+                    // console.log('Token from session store:', req.token, 'OperatorId:', req.operatorId, 'Email:', req.userEmail);
                     return next();
                 } else {
-                    console.log('Session token not found or expired:', sessionToken);
+                    // console.log('Session token not found or expired:', sessionToken);
                     req.token = null;
                     next();
                 }

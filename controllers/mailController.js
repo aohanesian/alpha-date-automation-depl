@@ -32,10 +32,10 @@ function extractToken(req, res, next) {
                 req.token = sessionData.token;
                 req.userEmail = sessionData.email;
                 req.operatorId = sessionData.operatorId;
-                console.log('Token from session store:', req.token, 'OperatorId:', req.operatorId);
+                // console.log('Token from session store:', req.token, 'OperatorId:', req.operatorId);
                 return next();
             } else {
-                console.log('Session token not found or expired:', sessionToken);
+                // console.log('Session token not found or expired:', sessionToken);
                 req.token = null;
                 next();
             }
@@ -190,14 +190,25 @@ router.post('/start', async (req, res) => {
         }
 
         // Get browser session for this request
-        const email = req.session.email;
-        const browserSession = sessionAwareService.getBrowserSession(req.sessionID, email);
+        const email = req.session.email || req.userEmail;
+        console.log(`[MAIL CONTROLLER] Attempting to get browser session for user ${email} with session ID: ${req.sessionID}`);
         
-        console.log(`[MAIL CONTROLLER] Browser session for user ${email}:`, {
+        // Try multiple ways to get browser session
+        let browserSession = sessionAwareService.getBrowserSession(req.sessionID, email);
+        
+        // If not found, try with just session ID
+        if (!browserSession) {
+            browserSession = sessionAwareService.getBrowserSession(req.sessionID);
+        }
+        
+        console.log(`[MAIL CONTROLLER] Browser session result for user ${email}:`, {
             sessionId: req.sessionID,
             hasBrowserSession: !!browserSession,
             hasPage: !!browserSession?.page,
-            pageClosed: browserSession?.page?.isClosed?.() || 'unknown'
+            pageClosed: browserSession?.page?.isClosed?.() || 'unknown',
+            sessionEmail: req.session.email,
+            sessionToken: !!req.session.token,
+            sessionOperatorId: req.session.operatorId
         });
         
         // Start processing

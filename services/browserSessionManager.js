@@ -21,18 +21,36 @@ const browserSessionManager = {
 
     // Get a browser session
     getSession(sessionId, email = null) {
+        console.log(`[BROWSER SESSION] Attempting to get session - sessionId: ${sessionId}, email: ${email}`);
+        
         let session = browserSessions.get(sessionId);
+        console.log(`[BROWSER SESSION] Session by sessionId: ${!!session}`);
         
         // If not found by session ID, try by email
         if (!session && email) {
             session = browserSessionsByEmail.get(email);
+            console.log(`[BROWSER SESSION] Session by email: ${!!session}`);
             if (session) {
                 console.log(`[BROWSER SESSION] Retrieved session by email: ${email}`);
             }
         }
         
+        // If still not found, try to find any session that might be available
+        if (!session) {
+            // Try to find any active session
+            for (const [id, sess] of browserSessions.entries()) {
+                if (sess && sess.page && !sess.page.isClosed()) {
+                    console.log(`[BROWSER SESSION] Found alternative session: ${id}`);
+                    session = sess;
+                    break;
+                }
+            }
+        }
+        
         if (session) {
             console.log(`[BROWSER SESSION] Retrieved session for: ${sessionId}`);
+        } else {
+            console.log(`[BROWSER SESSION] No session found for sessionId: ${sessionId}, email: ${email}`);
         }
         return session;
     },

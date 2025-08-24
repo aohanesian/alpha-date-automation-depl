@@ -116,11 +116,11 @@ app.use(cors({
         ];
 
         if (allowedOrigins.indexOf(origin) !== -1) {
-            console.log('CORS allowed origin:', origin);
+            // console.log('CORS allowed origin:', origin);
             callback(null, true);
         } else {
-            console.log('CORS blocked origin:', origin);
-            console.log('Allowed origins:', allowedOrigins);
+            // console.log('CORS blocked origin:', origin);
+            // console.log('Allowed origins:', allowedOrigins);
             callback(new Error('Not allowed by CORS'));
         }
     },
