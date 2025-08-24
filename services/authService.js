@@ -200,14 +200,13 @@ const authService = {
         try {
             console.log('[INFO] Attempting to authenticate with Alpha.Date using Puppeteer with stealth plugin');
             
-            // Check if proxy is configured and use it for better Cloudflare bypass
-            const proxyHost = process.env.PROXY_HOST || '172.64.48.37';
-            const proxyPort = process.env.PROXY_PORT || '80';
-            const useProxy = process.env.USE_PROXY === 'true' || process.env.NODE_ENV === 'production';
+            // Check if ZenRows is configured and use it for better Cloudflare bypass
+            const zenRowsApiKey = process.env.ZENROWS_API_KEY || 'a99283cb465506ebb89875eeff4df36020d71c7b';
+            const useZenRows = process.env.USE_ZENROWS === 'true' || process.env.NODE_ENV === 'production';
             
-            if (useProxy) {
-                console.log(`[INFO] Using proxy ${proxyHost}:${proxyPort} for Cloudflare bypass...`);
-                return await this.authenticateWithProxy(email, password, proxyHost, proxyPort);
+            if (useZenRows) {
+                console.log('[INFO] Using ZenRows for Cloudflare bypass...');
+                return await this.authenticateWithZenRows(email, password, zenRowsApiKey);
             }
             
             // Check if we're in production and if Puppeteer is available
@@ -818,173 +817,6 @@ const authService = {
             
         } catch (error) {
             console.error('[ERROR] ZenRows authentication error:', error);
-            
-            // Fallback to API method
-            console.log('[INFO] Falling back to API authentication method...');
-            if (browser) {
-                await browser.close();
-            }
-            return await this.authenticateWithAPI(email, password);
-        }
-    },
-
-    async authenticateWithProxy(email, password, proxyHost, proxyPort) {
-        let browser = null;
-        
-        try {
-            console.log('[INFO] Starting proxy authentication...');
-            console.log(`[INFO] Using proxy: ${proxyHost}:${proxyPort}`);
-            
-            // Configure proxy arguments
-            const proxyArgs = [
-                `--proxy-server=${proxyHost}:${proxyPort}`,
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--disable-gpu',
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-renderer-backgrounding',
-                '--disable-features=TranslateUI',
-                '--disable-ipc-flooding-protection',
-                '--disable-default-apps',
-                '--disable-extensions',
-                '--disable-plugins',
-                '--disable-images',
-                '--disable-javascript',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor',
-                '--disable-background-networking',
-                '--disable-sync',
-                '--disable-translate',
-                '--hide-scrollbars',
-                '--mute-audio',
-                '--no-default-browser-check',
-                '--no-pings',
-                '--disable-logging',
-                '--disable-permissions-api',
-                '--disable-notifications',
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-renderer-backgrounding',
-                '--disable-features=TranslateUI',
-                '--disable-ipc-flooding-protection',
-                '--disable-default-apps',
-                '--disable-extensions',
-                '--disable-plugins',
-                '--disable-images',
-                '--disable-javascript',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor',
-                '--disable-background-networking',
-                '--disable-sync',
-                '--disable-translate',
-                '--hide-scrollbars',
-                '--mute-audio',
-                '--no-default-browser-check',
-                '--no-pings',
-                '--disable-logging',
-                '--disable-permissions-api',
-                '--disable-notifications'
-            ];
-
-            // Launch browser with proxy
-            browser = await puppeteer.launch({
-                headless: true,
-                args: proxyArgs,
-                executablePath: foundChromePath || undefined
-            });
-
-            console.log('[INFO] Browser launched with proxy');
-            
-            const page = await browser.newPage();
-            
-            // Set user agent to look more like a real browser
-            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-            
-            // Set viewport
-            await page.setViewport({ width: 1920, height: 1080 });
-            
-            console.log('[INFO] Navigating to Alpha.Date login page via proxy...');
-            await page.goto('https://alpha.date/login', { 
-                waitUntil: 'networkidle2',
-                timeout: 30000 
-            });
-            
-            // Wait for page to load and check for Cloudflare
-            await page.waitForTimeout(3000);
-            
-            const pageContent = await page.content();
-            if (pageContent.includes('cloudflare') || pageContent.includes('challenge')) {
-                console.log('[INFO] Cloudflare challenge detected, waiting for resolution...');
-                await page.waitForTimeout(10000); // Wait longer for Cloudflare
-            }
-            
-            // Check if we're on the login page
-            const currentUrl = page.url();
-            if (!currentUrl.includes('login')) {
-                console.log('[INFO] Redirected from login page, current URL:', currentUrl);
-            }
-            
-            // Wait for login form to be available
-            console.log('[INFO] Waiting for login form...');
-            await page.waitForSelector('input[name="login"], input[data-testid="email"]', { timeout: 15000 });
-            
-            // Fill in login form
-            console.log('[INFO] Filling login form...');
-            await page.type('input[name="login"], input[data-testid="email"]', email);
-            await page.type('input[name="password"], input[data-testid="password"]', password);
-            
-            // Click login button
-            console.log('[INFO] Clicking login button...');
-            await page.click('button[data-testid="submit-btn"], button:has-text("Log in"), input[type="submit"]');
-            
-            // Wait for navigation
-            await page.waitForTimeout(5000);
-            
-            // Check if login was successful
-            const newUrl = page.url();
-            console.log('[INFO] Post-login URL:', newUrl);
-            
-            if (newUrl.includes('dashboard') || newUrl.includes('profile') || !newUrl.includes('login')) {
-                console.log('[INFO] Login appears successful, extracting token...');
-                
-                // Extract token from localStorage or cookies
-                const token = await page.evaluate(() => {
-                    return localStorage.getItem('token') || 
-                           localStorage.getItem('authToken') || 
-                           localStorage.getItem('accessToken') ||
-                           document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1];
-                });
-                
-                if (token) {
-                    console.log('[INFO] Token extracted successfully');
-                    
-                    // Extract operator ID
-                    const operatorId = await this.extractOperatorId(page, token);
-                    
-                    // Store browser session
-                    const sessionId = await browserSessionManager.storeBrowserSession(browser, page, email, token, operatorId);
-                    
-                    return {
-                        success: true,
-                        token,
-                        operatorId,
-                        sessionId,
-                        message: 'Authentication successful via proxy'
-                    };
-                } else {
-                    throw new Error('Token not found after successful login');
-                }
-            } else {
-                throw new Error('Login failed - still on login page');
-            }
-            
-        } catch (error) {
-            console.error('[ERROR] Proxy authentication error:', error);
             
             // Fallback to API method
             console.log('[INFO] Falling back to API authentication method...');
