@@ -1,0 +1,19 @@
+{
+  "name": "alpha-date-automation-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Frontend-only deployment for Alpha Date Automation",
+  "type": "module",
+  "scripts": {
+    "build": "npx vite build",
+    "start": "npx serve -s dist -l $PORT",
+    "preview": "npx vite preview"
+  },
+  "dependencies": {
+    "serve": "^14.2.1",
+    "vite": "^6.3.5"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

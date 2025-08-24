@@ -347,14 +347,29 @@ app.get('/captcha-test', (req, res) => {
     res.sendFile(path.join(__dirname, 'captcha-test.html'));
 });
 
+// Test endpoint for Mac server
+app.get('/api/mac-server-test', (req, res) => {
+    res.json({
+        success: true,
+        message: 'Mac server is running!',
+        timestamp: new Date().toISOString(),
+        server: 'Mac Local Server',
+        tunnel: 'ngrok'
+    });
+});
+
 // Serve the main dashboard
 app.use(express.static(path.join(__dirname, 'dist'), {
     maxAge: '1y',
     immutable: true
 }));
 
-// Catch-all handler for SPA
+// Catch-all handler for SPA (only for non-API routes)
 app.get('*', (req, res) => {
+    // Don't serve frontend for API routes
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'API endpoint not found' });
+    }
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 

@@ -18,7 +18,7 @@ brew install ngrok
 
 # Or download from https://ngrok.com/
 # Sign up for a free account to get your authtoken
-ngrok config add-authtoken YOUR_AUTH_TOKEN
+ngrok config add-authtoken 1iJxqBTFtYCcNo38qIiWTKcljDo_6HSL231RuJejsAVUh8oLQ
 ```
 
 ### 2. Start the local server
