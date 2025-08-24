@@ -335,6 +335,12 @@ const mailService = {
                 let browserData;
                 
                 // Try browser session first if available
+                console.log(`[MAIL SERVICE] Browser session check for profile ${profileId}:`, {
+                    hasBrowserSession: !!browserSession,
+                    hasPage: !!browserSession?.page,
+                    pageClosed: browserSession?.page?.isClosed?.() || 'unknown'
+                });
+                
                 if (browserSession && browserSession.page && !browserSession.page.isClosed()) {
                     try {
                         console.log(`[MAIL SERVICE] Fetching mail chats via browser session for profile ${profileId}...`);

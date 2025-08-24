@@ -193,6 +193,13 @@ router.post('/start', async (req, res) => {
         const email = req.session.email;
         const browserSession = sessionAwareService.getBrowserSession(req.sessionID, email);
         
+        console.log(`[MAIL CONTROLLER] Browser session for user ${email}:`, {
+            sessionId: req.sessionID,
+            hasBrowserSession: !!browserSession,
+            hasPage: !!browserSession?.page,
+            pageClosed: browserSession?.page?.isClosed?.() || 'unknown'
+        });
+        
         // Start processing
         mailService.startProcessing(profileId, message, attachments || [], token, req.operatorId, browserSession);
 
