@@ -503,8 +503,15 @@ const authService = {
             }
 
             // Create unique user data directory for each session to avoid conflicts
-            const userDataDir = sessionId ? `/tmp/chrome-user-${sessionId}` : `/tmp/chrome-user-${Date.now()}`;
+            const userDataDir = sessionId ? `/tmp/chrome-user-${sessionId}-${Date.now()}` : `/tmp/chrome-user-${Date.now()}-${Math.random()}`;
             launchOptions.userDataDir = userDataDir;
+            
+            // Additional args to prevent process conflicts on Render
+            launchOptions.args.push(
+                `--user-data-dir=${userDataDir}`,
+                '--disable-dev-shm-usage',
+                '--remote-debugging-port=0' // Let Chrome choose port automatically
+            );
             
             console.log(`[INFO] Launching Chrome instance for user ${email} with user data dir: ${userDataDir}`);
             browser = await puppeteer.launch(launchOptions);
@@ -551,21 +558,37 @@ const authService = {
 
             // Navigate to Alpha.Date to establish session and get cf_clearance cookie
             console.log('[INFO] Navigating to Alpha.Date to establish session...');
+            
+            // First, try to navigate and handle any Cloudflare challenges
             await page.goto('https://alpha.date/', {
                 waitUntil: 'networkidle2',
                 timeout: 30000
             });
 
-            // Wait for page to load and any Cloudflare challenges to resolve
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            // Wait for initial page load
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
-            // Check if we're on the correct domain (not Cloudflare challenge)
+            // Check if we're on a Cloudflare challenge page
             const currentUrl = page.url();
             console.log('[INFO] Current URL after navigation:', currentUrl);
-
+            
             if (currentUrl.includes('cloudflare') || currentUrl.includes('challenge')) {
-                console.log('[WARN] Still on Cloudflare challenge page, waiting longer...');
-                await new Promise(resolve => setTimeout(resolve, 10000));
+                console.log('[INFO] Cloudflare challenge detected, waiting for resolution...');
+                
+                // Wait for challenge to resolve (or timeout)
+                try {
+                    await page.waitForFunction(() => {
+                        return !window.location.href.includes('cloudflare') && 
+                               !window.location.href.includes('challenge') &&
+                               !document.body.innerHTML.includes('Just a moment');
+                    }, { timeout: 30000 });
+                    console.log('[INFO] Cloudflare challenge resolved');
+                } catch (timeoutError) {
+                    console.log('[WARN] Cloudflare challenge timeout, continuing anyway...');
+                }
+                
+                // Additional wait after challenge resolution
+                await new Promise(resolve => setTimeout(resolve, 5000));
             }
 
             // Navigate to login page to ensure we have the right cookies for login API
@@ -576,7 +599,7 @@ const authService = {
             });
 
             // Wait for login page to fully load and establish session
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            await new Promise(resolve => setTimeout(resolve, 5000));
 
             // Check current cookies to verify cf_clearance is present
             const cookies = await page.cookies();
@@ -584,6 +607,10 @@ const authService = {
             console.log(`[INFO] cf_clearance cookie present: ${!!cfClearance}`);
             if (cfClearance) {
                 console.log(`[INFO] cf_clearance value: ${cfClearance.value.substring(0, 20)}...`);
+            } else {
+                console.log('[WARN] cf_clearance cookie not found - browser API calls may fail');
+                // Log all cookies for debugging
+                console.log('[DEBUG] Available cookies:', cookies.map(c => c.name).join(', '));
             }
 
             // Create browser session object
@@ -860,8 +887,15 @@ const authService = {
             }
 
             // Create unique user data directory for each session to avoid conflicts
-            const userDataDir = sessionId ? `/tmp/chrome-user-${sessionId}` : `/tmp/chrome-user-${Date.now()}`;
+            const userDataDir = sessionId ? `/tmp/chrome-user-${sessionId}-${Date.now()}` : `/tmp/chrome-user-${Date.now()}-${Math.random()}`;
             launchOptions.userDataDir = userDataDir;
+            
+            // Additional args to prevent process conflicts on Render
+            launchOptions.args.push(
+                `--user-data-dir=${userDataDir}`,
+                '--disable-dev-shm-usage',
+                '--remote-debugging-port=0' // Let Chrome choose port automatically
+            );
             
             console.log(`[INFO] Launching Chrome instance for user ${email} with user data dir: ${userDataDir}`);
             browser = await puppeteer.launch(launchOptions);
