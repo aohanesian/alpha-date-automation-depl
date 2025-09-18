@@ -8,9 +8,11 @@
   "scripts": {
     "dev": "vite",
     "build": "npx vite build",
-    "build:prod": "bash build.sh",
-    "build:simple": "bash build-simple.sh",
+    "build:prod": "npm install && npm run install:chrome && npm run build",
+    "build:simple": "bash build-simple.sh", 
     "build:fast": "bash build-fast.sh",
+    "build:local": "npm install && npm run build",
+    "install:chrome": "node install-chrome.js",
     "preview": "vite preview",
     "start": "node server.js",
     "server:dev": "nodemon server.js",
@@ -18,7 +20,7 @@
     "test:captcha:manual": "node test-captcha.js --manual",
     "test:chrome": "node test-chrome.js",
     "test:api": "node test-api-only.js",
-    "debug:chrome": "node -e \"const puppeteer = require('puppeteer'); console.log('Puppeteer version:', require('puppeteer/package.json').version); console.log('Chrome executable path:', puppeteer.executablePath());\""
+    "debug:chrome": "node debug-chrome.js"
   },
   "dependencies": {
     "body-parser": "^1.20.2",

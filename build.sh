@@ -2,15 +2,25 @@
 
 echo "=== Starting build process ==="
 
-# Set production environment
-export NODE_ENV=production
-export PUPPETEER_CACHE_DIR=/opt/render/.cache/puppeteer
-export PUPPETEER_EXECUTABLE_PATH=/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome
-export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false
-export PUPPETEER_DISABLE_HEADLESS_WARNING=true
+# Detect environment - don't override if already set
+if [ -z "$NODE_ENV" ]; then
+    export NODE_ENV=production
+fi
 
-# Check if we're in a production environment
+echo "Environment: $NODE_ENV"
+echo "Platform: $(uname -s)"
+echo "User: $(whoami)"
+
+# Set Puppeteer environment variables for production
 if [ "$NODE_ENV" = "production" ]; then
+    export PUPPETEER_CACHE_DIR=/opt/render/.cache/puppeteer
+    export PUPPETEER_EXECUTABLE_PATH=/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome
+    export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false
+    export PUPPETEER_DISABLE_HEADLESS_WARNING=true
+fi
+
+# Check if we're in a production environment (Render or similar)
+if [ "$NODE_ENV" = "production" ] && [ -w "/opt" ]; then
     echo "Production environment detected, installing Chrome..."
     
     # Install system dependencies for Chrome
@@ -67,22 +77,26 @@ fi
 echo "Installing Node.js dependencies..."
 npm install
 
-# Install Puppeteer browsers
-echo "Installing Puppeteer browsers..."
-npx puppeteer browsers install chrome --force
+# Install Puppeteer browsers (only in production with proper permissions)
+if [ "$NODE_ENV" = "production" ] && [ -w "/opt" ]; then
+    echo "Installing Puppeteer browsers..."
+    npx puppeteer browsers install chrome --force
+    
+    echo "=== Puppeteer Debug ==="
+    echo "Puppeteer browsers: $(npx puppeteer browsers list || echo 'Failed to list')"
+else
+    echo "Skipping Puppeteer browser installation (not production environment or no /opt write access)"
+fi
 
-# Debug Puppeteer installation
-echo "=== Puppeteer Debug ==="
-echo "Puppeteer browsers: $(npx puppeteer browsers list || echo 'Failed to list')"
-npm run debug:chrome
-
-# Test Chrome functionality (non-blocking)
-echo "Testing Chrome functionality..."
-npm run test:chrome || echo "Chrome test failed, but continuing build"
-
-# Test API functionality (non-blocking)
-echo "Testing API functionality..."
-npm run test:api || echo "API test failed, but continuing build"
+# Only run Chrome tests in production environment with proper setup
+if [ "$NODE_ENV" = "production" ] && [ -w "/opt" ]; then
+    echo "Production environment - running Chrome tests..."
+    npm run debug:chrome || echo "Chrome debug failed, but continuing build"
+    npm run test:chrome || echo "Chrome test failed, but continuing build"
+    npm run test:api || echo "API test failed, but continuing build"
+else
+    echo "Development environment - skipping Chrome tests (Chrome not installed locally)"
+fi
 
 # Build the application
 echo "Building application..."
