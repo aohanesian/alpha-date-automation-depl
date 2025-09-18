@@ -459,6 +459,7 @@ const authService = {
             // Launch browser with enhanced stealth settings
             const launchOptions = {
                 headless: process.env.NODE_ENV === 'production' ? 'new' : false, // Use headless in production
+                timeout: 60000, // Increase timeout for Render
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -472,6 +473,7 @@ const authService = {
                     '--disable-renderer-backgrounding',
                     '--disable-web-security',
                     '--disable-features=VizDisplayCompositor',
+                    '--single-process', // Critical for Render containers
                     // Additional stealth arguments
                     '--disable-blink-features=AutomationControlled',
                     '--disable-extensions',
@@ -564,6 +566,24 @@ const authService = {
             if (currentUrl.includes('cloudflare') || currentUrl.includes('challenge')) {
                 console.log('[WARN] Still on Cloudflare challenge page, waiting longer...');
                 await new Promise(resolve => setTimeout(resolve, 10000));
+            }
+
+            // Navigate to login page to ensure we have the right cookies for login API
+            console.log('[INFO] Navigating to login page to establish login session...');
+            await page.goto('https://alpha.date/login', {
+                waitUntil: 'networkidle2',
+                timeout: 30000
+            });
+
+            // Wait for login page to fully load and establish session
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            // Check current cookies to verify cf_clearance is present
+            const cookies = await page.cookies();
+            const cfClearance = cookies.find(cookie => cookie.name === 'cf_clearance');
+            console.log(`[INFO] cf_clearance cookie present: ${!!cfClearance}`);
+            if (cfClearance) {
+                console.log(`[INFO] cf_clearance value: ${cfClearance.value.substring(0, 20)}...`);
             }
 
             // Create browser session object
@@ -796,6 +816,7 @@ const authService = {
             // Launch browser with enhanced stealth settings
             const launchOptions = {
                 headless: process.env.NODE_ENV === 'production' ? 'new' : false, // Use headless in production
+                timeout: 60000, // Increase timeout for Render
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -809,6 +830,7 @@ const authService = {
                     '--disable-renderer-backgrounding',
                     '--disable-web-security',
                     '--disable-features=VizDisplayCompositor',
+                    '--single-process', // Critical for Render containers
                     // Additional stealth arguments
                     '--disable-blink-features=AutomationControlled',
                     '--disable-extensions',

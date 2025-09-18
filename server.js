@@ -20,6 +20,36 @@ import captchaController from './controllers/captchaController.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Simple Chrome check on startup
+if (process.env.NODE_ENV === 'production') {
+    console.log('[STARTUP] Checking Chrome availability...');
+    try {
+        const { existsSync } = await import('fs');
+        
+        const chromePaths = [
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium-browser',
+            '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome'
+        ];
+        
+        let chromeFound = false;
+        for (const path of chromePaths) {
+            if (existsSync(path)) {
+                console.log(`[STARTUP] ✅ Chrome found at: ${path}`);
+                chromeFound = true;
+                break;
+            }
+        }
+        
+        if (!chromeFound) {
+            console.log('[STARTUP] ⚠️  No Chrome found - browser sessions will use ZenRows fallback');
+        }
+    } catch (error) {
+        console.log('[STARTUP] Chrome check failed:', error.message);
+    }
+}
+
 // Statistics tracking
 let totalMessagesSent = 0;
 let totalMailsSent = 0;

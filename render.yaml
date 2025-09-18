@@ -1,7 +1,5 @@
 services:
-  # Alpha Date Automation Service
-  # This service handles authentication with Alpha.Date using both Puppeteer and API methods
-  # If Puppeteer fails (Chrome not available), it falls back to API authentication
+  # Alpha Date Automation Service with Chrome support
   - type: web
     name: alpha-date-automation
     runtime: node

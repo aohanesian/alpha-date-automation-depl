@@ -8,11 +8,10 @@
   "scripts": {
     "dev": "vite",
     "build": "npx vite build",
-    "build:prod": "npm install && npm run install:chrome && npm run build",
+    "build:prod": "npm install && npm run build",
     "build:simple": "bash build-simple.sh", 
     "build:fast": "bash build-fast.sh",
     "build:local": "npm install && npm run build",
-    "install:chrome": "node install-chrome.js",
     "preview": "vite preview",
     "start": "node server.js",
     "server:dev": "nodemon server.js",
