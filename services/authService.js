@@ -361,14 +361,14 @@ const authService = {
                 }
                 
                 const possiblePaths = [
-                    process.env.PUPPETEER_EXECUTABLE_PATH,
                     systemChromePath,
-                    '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
-                    '/opt/render/.cache/puppeteer/chrome-linux/chrome',
                     '/usr/bin/google-chrome-stable',
                     '/usr/bin/google-chrome',
                     '/usr/bin/chromium-browser',
-                    '/usr/bin/chromium'
+                    '/usr/bin/chromium',
+                    process.env.PUPPETEER_EXECUTABLE_PATH, // Puppeteer as fallback
+                    '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
+                    '/opt/render/.cache/puppeteer/chrome-linux/chrome'
                 ].filter(Boolean);
                 
                 console.log('[INFO] Checking Chrome paths...');
@@ -698,14 +698,14 @@ const authService = {
                 }
                 
                 const possiblePaths = [
-                    process.env.PUPPETEER_EXECUTABLE_PATH,
                     systemChromePath,
-                    '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
-                    '/opt/render/.cache/puppeteer/chrome-linux/chrome',
                     '/usr/bin/google-chrome-stable',
                     '/usr/bin/google-chrome',
                     '/usr/bin/chromium-browser',
-                    '/usr/bin/chromium'
+                    '/usr/bin/chromium',
+                    process.env.PUPPETEER_EXECUTABLE_PATH, // Puppeteer as fallback
+                    '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
+                    '/opt/render/.cache/puppeteer/chrome-linux/chrome'
                 ].filter(Boolean);
                 
                 console.log('[INFO] Checking Chrome paths...');

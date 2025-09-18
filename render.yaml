@@ -10,17 +10,7 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PUPPETEER_CACHE_DIR
-        value: /opt/render/.cache/puppeteer
-      - key: PUPPETEER_EXECUTABLE_PATH
-        value: /opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome
-      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
-        value: "false"
-      - key: PUPPETEER_DISABLE_HEADLESS_WARNING
-        value: "true"
-      - key: PUPPETEER_ARGS
-        value: "--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu"
       - key: USE_ZENROWS
-        value: "true"
+        value: "false"
       - key: ZENROWS_API_KEY
         value: "a99283cb465506ebb89875eeff4df36020d71c7b"

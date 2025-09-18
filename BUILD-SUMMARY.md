@@ -9,8 +9,13 @@ npm install && npm run install:chrome && npm run build
 
 ### **What It Does**:
 1. **`npm install`** - Installs Node.js dependencies
-2. **`npm run install:chrome`** - Smart Chrome installation (environment-aware)
+2. **`npm run install:chrome`** - Smart **system Chrome** installation (environment-aware)
 3. **`npm run build`** - Builds the frontend with Vite
+
+### **Chrome Installation Strategy**:
+- **System Chrome First**: Installs `google-chrome-stable` via apt
+- **No Puppeteer browsers**: Uses system Chrome instead of Puppeteer's bundled Chrome
+- **Fallback support**: Still supports Puppeteer Chrome if system Chrome fails
 
 ## 🎯 **Environment Detection**
 

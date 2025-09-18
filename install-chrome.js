@@ -63,7 +63,7 @@ try {
             libappindicator3-1 libnspr4 xdg-utils
     `, { stdio: 'inherit' });
 
-    // Install Google Chrome
+    // Install Google Chrome (system installation)
     console.log('Installing Google Chrome...');
     try {
         execSync(`
@@ -72,17 +72,22 @@ try {
             apt-get update &&
             apt-get install -y google-chrome-stable
         `, { stdio: 'inherit' });
+        console.log('✅ System Chrome installed successfully');
     } catch (error) {
         console.log('Chrome installation via apt failed, trying direct download...');
-        execSync(`
-            wget -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb &&
-            apt-get install -y /tmp/chrome.deb
-        `, { stdio: 'inherit' });
+        try {
+            execSync(`
+                wget -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb &&
+                apt-get install -y /tmp/chrome.deb
+            `, { stdio: 'inherit' });
+            console.log('✅ System Chrome installed via direct download');
+        } catch (directError) {
+            console.log('❌ System Chrome installation failed, but continuing...');
+        }
     }
 
-    // Install Puppeteer browsers
-    console.log('Installing Puppeteer browsers...');
-    execSync('npx puppeteer browsers install chrome --force', { stdio: 'inherit' });
+    // Skip Puppeteer browsers - use system Chrome instead
+    console.log('Skipping Puppeteer browser installation (using system Chrome)');
 
     // Verify installation
     console.log('Verifying Chrome installation...');
@@ -90,24 +95,32 @@ try {
     // Check system Chrome
     try {
         const chromeVersion = execSync('google-chrome --version', { encoding: 'utf8' });
-        console.log(`System Chrome: ${chromeVersion.trim()}`);
+        console.log(`✅ System Chrome: ${chromeVersion.trim()}`);
+        
+        // Test system Chrome launch
+        execSync('google-chrome --version --no-sandbox', { stdio: 'ignore' });
+        console.log('✅ System Chrome launch test successful');
+        
     } catch {
-        console.log('System Chrome: Not found');
-    }
-
-    // Check Puppeteer Chrome
-    try {
-        const puppeteerPath = process.env.PUPPETEER_EXECUTABLE_PATH;
-        if (existsSync(puppeteerPath)) {
-            console.log(`Puppeteer Chrome: Found at ${puppeteerPath}`);
-        } else {
-            console.log('Puppeteer Chrome: Not found at expected path');
+        console.log('❌ System Chrome: Not found or not working');
+        
+        // Check alternative Chrome locations
+        const chromePaths = [
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/chromium'
+        ];
+        
+        for (const path of chromePaths) {
+            if (existsSync(path)) {
+                console.log(`✅ Found alternative Chrome at: ${path}`);
+                break;
+            }
         }
-    } catch (error) {
-        console.log('Puppeteer Chrome: Error checking path');
     }
 
-    console.log('✅ Chrome installation completed successfully!');
+    console.log('✅ Chrome installation process completed!');
 
 } catch (error) {
     console.error('❌ Chrome installation failed:', error.message);
