@@ -166,25 +166,26 @@ const mailService = {
                     data = await response.json();
                 }
 
-                // Look for folder from environment variable (default: "send")
-                if (data.folders && typeof data.folders === 'object') {
+                // Take first 5 items from the response array
+                let items = [];
+                if (data[type] && Array.isArray(data[type])) {
+                    items = data[type];
+                } else if (data.response && Array.isArray(data.response)) {
+                    items = data.response;
+                } else if (data.folders && typeof data.folders === 'object') {
+                    // Fallback: still check folders if direct array not found
                     const folderName = process.env.VITE_ATTACHMENT_FOLDER_NAME || "send";
                     const sendFolder = Object.values(data.folders).find(folder =>
                         folder.name.toLowerCase() === folderName.toLowerCase()
                     );
-
                     if (sendFolder && Array.isArray(sendFolder.list)) {
-                        attachments[type] = sendFolder.list;
-                    } else {
-                        attachments[type] = [];
+                        items = sendFolder.list;
                     }
-                } else if (data[type] && Array.isArray(data[type])) {
-                    attachments[type] = data[type];
-                } else if (data.response && Array.isArray(data.response)) {
-                    attachments[type] = data.response;
-                } else {
-                    attachments[type] = [];
                 }
+                
+                // Limit to first 5 items
+                attachments[type] = items.slice(0, 5);
+                console.log(`[MAIL SERVICE] Loaded ${attachments[type].length} ${type} (first 5 items) for profile ${profileId}`);
             }
 
             attachmentsCache.set(profileId, attachments);
@@ -639,27 +640,59 @@ const mailService = {
                         // Handle API-level errors
                         const hasRestrictionError = (blockReason) => blockReason.reason === "Restriction of sending a personal letter. Try when the list becomes active";
                         
+                        // Check for fatal errors first
+                        if (mailData.error && mailData.error.toLowerCase() === "not your profile") {
+                            return {
+                                success: false,
+                                shouldStop: true,
+                                error: `Fatal error: Not your profile`
+                            };
+                        }
+                        
                         // Add to block list all except those with restriction error
                         const blockedExternalIds = (mailData.blocked_ids || []);
                         const blockReasons = (mailData.blockReasons || []);
+                        const restrictionIds = new Set(
+                            blockReasons
+                                .filter(hasRestrictionError)
+                                .map(reason => reason.manExternalId)
+                        );
                         
-                        // Process blocked recipients
-                        for (let i = 0; i < recipientIds.length; i++) {
-                            const recipientId = recipientIds[i];
-                            const isBlocked = blockedExternalIds.includes(recipientId);
-                            const blockReason = blockReasons.find(reason => reason.external_id === recipientId);
-                            
-                            if (isBlocked && !hasRestrictionError(blockReason)) {
+                        // Add to block list all recipients except those with restriction error
+                        for (const recipientId of recipientIds) {
+                            if (!restrictionIds.has(String(recipientId))) {
                                 this.addToBlockList(profileId, recipientId);
                             }
                         }
                         
-                        return { success: true };
+                        // Increment global statistics
+                        if (global.incrementMailsSent) {
+                            global.incrementMailsSent();
+                        }
+                        
+                        return { success: true, message_id: mailData.message_id, blocked_ids: blockedExternalIds, blockReasons };
                     } else {
                         console.log(`[MAIL SERVICE] Browser session returned no data for mail, falling back to direct API...`);
                     }
                 } catch (browserError) {
                     console.log(`[MAIL SERVICE] Browser session failed for mail:`, browserError.message);
+                    
+                    // Check for specific error types that should trigger fallback
+                    if (browserError.message.includes('429')) {
+                        return {
+                            success: false,
+                            rateLimited: true,
+                            error: 'Rate limited'
+                        };
+                    }
+                    
+                    if (browserError.message.includes('401')) {
+                        return {
+                            success: false,
+                            shouldStop: true,
+                            error: '401 Unauthorized - terminating session'
+                        };
+                    }
                 }
             } else {
                 console.log(`[MAIL SERVICE] Browser session not available for mail, using direct API...`);
@@ -760,13 +793,20 @@ const mailService = {
     },
 
     isBlocked(profileId, recipientId) {
-        return mailBlockLists[profileId]?.includes(recipientId);
+        const blocked = mailBlockLists[profileId]?.includes(recipientId);
+        if (blocked) {
+            console.log(`[MAIL SERVICE] ${recipientId} is blocked for profile ${profileId}`);
+        }
+        return blocked;
     },
 
     addToBlockList(profileId, recipientId) {
         if (!mailBlockLists[profileId]) mailBlockLists[profileId] = [];
         if (!mailBlockLists[profileId].includes(recipientId)) {
             mailBlockLists[profileId].push(recipientId);
+            console.log(`[MAIL SERVICE] Added ${recipientId} to block list for profile ${profileId}. Block list now has ${mailBlockLists[profileId].length} entries.`);
+        } else {
+            console.log(`[MAIL SERVICE] ${recipientId} already in block list for profile ${profileId}`);
         }
     },
 

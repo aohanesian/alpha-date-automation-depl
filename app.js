@@ -1127,7 +1127,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateAttachmentLimit();
 
         if (!hasAttachments) {
-            container.innerHTML = `<div class="status">No attachments available, to add attachments create folder with the "${import.meta.env.VITE_ATTACHMENT_FOLDER_NAME || 'send'}" name for each type of media</div>`;
+            container.innerHTML = `<div class="status">No attachments available. Upload images, videos, or audio files to your Alpha.Date profile to use them here. The first 5 items of each type will be shown.</div>`;
         }
     }
 
@@ -1265,7 +1265,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         if (!hasAttachments) {
-            container.innerHTML += `<div class="status">No attachments available, to add attachments create folder with the "${import.meta.env.VITE_ATTACHMENT_FOLDER_NAME || 'send'}" name for each type of media</div>`;
+            container.innerHTML += `<div class="status">No attachments available. Upload images, videos, or audio files to your Alpha.Date profile to use them here. The first 5 items of each type will be shown.</div>`;
         }
     }
 

@@ -53,6 +53,12 @@ const chatService = {
 
     async makeApiCallFromBrowser(page, url, options = {}) {
         try {
+            // Check if page is still connected
+            if (!page || page.isClosed()) {
+                console.log('[CHAT SERVICE] Browser page is closed, cannot make API call');
+                return null;
+            }
+
             console.log(`[CHAT SERVICE] Making API call from browser: ${url}`);
             
             const result = await page.evaluate(async (url, options) => {
@@ -83,6 +89,12 @@ const chatService = {
             }
         } catch (error) {
             console.error('[CHAT SERVICE] Error making API call from browser:', error);
+            
+            // Check if it's a target closed error
+            if (error.message.includes('Target closed') || error.message.includes('Protocol error')) {
+                console.log('[CHAT SERVICE] Browser session lost, will fall back to direct API calls');
+            }
+            
             return null;
         }
     },
@@ -182,37 +194,72 @@ const chatService = {
                     }
 
                     try {
+                        let attachmentSent = false;
+                        let messageResult = null;
+                        
                         // If attachment is provided, send it first
                         if (attachment) {
                             const attachmentResult = await this.sendAttachmentMessage(profileId, recipientId, attachment, token, browserSession);
-                            if (!attachmentResult.success) {
+                            if (attachmentResult.success) {
+                                attachmentSent = true;
+                                console.log(`[CHAT SERVICE] Attachment sent successfully to ${recipientId}`);
+                            } else if (attachmentResult.rateLimited) {
+                                // Rate limited on attachment - wait and retry this entire recipient
+                                this.setProfileStatus(profileId, 'processing');
+                                await this.delay(50000, controller.signal);
+                                continue;
+                            } else if (attachmentResult.shouldStop) {
+                                // Fatal error - stop processing
+                                this.setProfileStatus(profileId, `Stopping due to: ${attachmentResult.error}`);
+                                return;
+                            } else {
+                                // Attachment failed - skip this recipient entirely
                                 skipped++;
                                 continue;
                             }
                         }
-                        const result = await this.sendFollowUpMessage(profileId, recipientId, messageTemplate, token, browserSession);
+                        
+                        // Send follow-up message (if there's a message template)
+                        if (messageTemplate) {
+                            messageResult = await this.sendFollowUpMessage(profileId, recipientId, messageTemplate, token, browserSession);
+                            
+                            if (messageResult.rateLimited) {
+                                // Rate limited on message - if attachment was already sent, we need to block this recipient
+                                if (attachmentSent) {
+                                    console.log(`[CHAT SERVICE] Message rate limited but attachment was sent - blocking ${recipientId} to prevent duplicate attachment`);
+                                    this.addToBlockList(profileId, recipientId);
+                                }
+                                this.setProfileStatus(profileId, 'processing');
+                                await this.delay(50000, controller.signal);
+                                continue;
+                            } else if (messageResult.shouldStop) {
+                                // Fatal error - stop processing
+                                this.setProfileStatus(profileId, `Stopping due to: ${messageResult.error}`);
+                                return;
+                            } else if (!messageResult.success) {
+                                // Message failed - if attachment was sent, still count as partial success
+                                if (attachmentSent) {
+                                    console.log(`[CHAT SERVICE] Message failed but attachment was sent to ${recipientId} - counting as success`);
+                                    sent++;
+                                } else {
+                                    skipped++;
+                                }
+                                continue;
+                            }
+                        }
 
-                        // Handle different response types
-                        if (result.success) {
+                        // Both attachment (if any) and message (if any) succeeded
+                        if (attachmentSent || (messageResult && messageResult.success)) {
                             sent++;
                             // Increment global statistics
                             if (global.incrementMessagesSent) {
                                 global.incrementMessagesSent();
                             }
-                        } else if (result.rateLimited) {
-                            // Rate limited - wait and continue processing
-                            this.setProfileStatus(profileId, 'processing');
-                            await this.delay(50000, controller.signal);
-                            // Don't increment counters, retry this message
-                            continue;
-                        } else if (result.shouldStop) {
-                            // Fatal error - stop processing
-                            this.setProfileStatus(profileId, `Stopping due to: ${result.error}`);
-                            return;
+                            console.log(`[CHAT SERVICE] Successfully sent to ${recipientId} (attachment: ${attachmentSent}, message: ${!!messageResult?.success})`);
                         } else {
-                            // Other error - skip this message
                             skipped++;
                         }
+                        
                     } catch (error) {
                         console.error(`Failed to send message to ${recipientId}:`, error);
                         skipped++;
@@ -524,6 +571,15 @@ const chatService = {
                         
                         console.log('[DEBUG LIKES] ' + JSON.stringify(messageData) + ' for man ID ' + recipientId);
                         
+                        // Check for fatal errors first
+                        if (messageData.error === "Not your profile") {
+                            return {
+                                success: false,
+                                shouldStop: true,
+                                error: `Fatal error: Not your profile`
+                            };
+                        }
+                        
                         // Handle API-level errors
                         if (hasRestrictionError) {
                             // Restriction error - skip this recipient but don't add to block list
@@ -539,6 +595,23 @@ const chatService = {
                     }
                 } catch (browserError) {
                     console.log(`[CHAT SERVICE] Browser session failed for attachment message, falling back to direct API...`);
+                    
+                    // Check for specific error types that should trigger fallback
+                    if (browserError.message.includes('429')) {
+                        return {
+                            success: false,
+                            rateLimited: true,
+                            error: 'Rate limited'
+                        };
+                    }
+                    
+                    if (browserError.message.includes('401')) {
+                        return {
+                            success: false,
+                            shouldStop: true,
+                            error: '401 Unauthorized - terminating session'
+                        };
+                    }
                 }
             }
             
@@ -559,10 +632,13 @@ const chatService = {
 
             // Handle different HTTP status codes
             if (response.status === 429) {
-                // Rate limited - wait and retry
-                console.error('429 Rate limited in sendAttachmentMessage. Waiting and retrying...');
-                await this.delay(50000);
-                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token, browserSession);
+                // Rate limited - return signal to caller to handle retry
+                console.error('429 Rate limited in sendAttachmentMessage.');
+                return {
+                    success: false,
+                    rateLimited: true,
+                    error: 'Rate limited'
+                };
             }
 
             if (response.status === 401) {
@@ -585,10 +661,13 @@ const chatService = {
             }
 
             if (response.status === 524) {
-                // Timeout - wait and retry
-                console.error('524 Timeout in sendAttachmentMessage. Waiting and retry...');
-                await this.delay(50000);
-                return await this.sendAttachmentMessage(senderId, recipientId, attachment, token, browserSession);
+                // Timeout - return signal to caller to handle retry
+                console.error('524 Timeout in sendAttachmentMessage.');
+                return {
+                    success: false,
+                    rateLimited: true, // Treat timeout as rate limiting
+                    error: 'Server timeout'
+                };
             }
 
             if (!response.ok) {
@@ -657,10 +736,50 @@ const chatService = {
                     
                     if (messageData) {
                         console.log(`[CHAT SERVICE] Successfully sent follow-up message via browser`);
+                        
+                        // Check for fatal errors first
+                        if (messageData.error === "Not your profile") {
+                            return {
+                                success: false,
+                                shouldStop: true,
+                                error: `Fatal error: Not your profile`
+                            };
+                        }
+                        
+                        // Handle API-level errors
+                        const hasRestrictionError = messageData.error === "Restriction of sending a personal message. Try when the list becomes active";
+                        
+                        if (hasRestrictionError) {
+                            // Restriction error - skip this recipient but don't add to block list
+                            return {
+                                success: false,
+                                error: 'Recipient restriction'
+                            };
+                        }
+                        
+                        // Success - add to block list to avoid sending again
+                        this.addToBlockList(senderId, recipientId);
                         return { success: true };
                     }
                 } catch (browserError) {
                     console.log(`[CHAT SERVICE] Browser session failed for follow-up message, falling back to direct API...`);
+                    
+                    // Check for specific error types that should trigger fallback
+                    if (browserError.message.includes('429')) {
+                        return {
+                            success: false,
+                            rateLimited: true,
+                            error: 'Rate limited'
+                        };
+                    }
+                    
+                    if (browserError.message.includes('401')) {
+                        return {
+                            success: false,
+                            shouldStop: true,
+                            error: '401 Unauthorized - terminating session'
+                        };
+                    }
                 }
             }
             
@@ -687,10 +806,13 @@ const chatService = {
 
             // Handle different HTTP status codes
             if (response.status === 429) {
-                // Rate limited - wait and retry
-                console.error('429 Rate limited in sendFollowUpMessage. Waiting and retrying...');
-                await this.delay(50000);
-                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token, browserSession);
+                // Rate limited - return signal to caller to handle retry
+                console.error('429 Rate limited in sendFollowUpMessage.');
+                return {
+                    success: false,
+                    rateLimited: true,
+                    error: 'Rate limited'
+                };
             }
 
             if (response.status === 401) {
@@ -703,20 +825,23 @@ const chatService = {
                 };
             }
 
-            if (response.status === 400 || response.status === 401 || messageData.error === "Not your profile") {
+            if (response.status === 400 || response.status === 401 || apiMessageData.error === "Not your profile") {
                 // Fatal errors - stop processing entirely
                 return {
                     success: false,
                     shouldStop: true,
-                    error: `Fatal error: ${response.status} - ${messageData.error || response.statusText}`
+                    error: `Fatal error: ${response.status} - ${apiMessageData.error || response.statusText}`
                 };
             }
 
             if (response.status === 524) {
-                // Timeout - wait and retry
-                console.error('524 Timeout in sendFollowUpMessage. Waiting and retrying...');
-                await this.delay(50000);
-                return await this.sendFollowUpMessage(senderId, recipientId, messageContent, token, browserSession);
+                // Timeout - return signal to caller to handle retry
+                console.error('524 Timeout in sendFollowUpMessage.');
+                return {
+                    success: false,
+                    rateLimited: true, // Treat timeout as rate limiting
+                    error: 'Server timeout'
+                };
             }
 
             if (!response.ok) {
@@ -750,13 +875,20 @@ const chatService = {
     },
 
     isBlocked(profileId, recipientId) {
-        return chatBlockLists[profileId]?.includes(recipientId);
+        const blocked = chatBlockLists[profileId]?.includes(recipientId);
+        if (blocked) {
+            console.log(`[CHAT SERVICE] ${recipientId} is blocked for profile ${profileId}`);
+        }
+        return blocked;
     },
 
     addToBlockList(profileId, recipientId) {
         if (!chatBlockLists[profileId]) chatBlockLists[profileId] = [];
         if (!chatBlockLists[profileId].includes(recipientId)) {
             chatBlockLists[profileId].push(recipientId);
+            console.log(`[CHAT SERVICE] Added ${recipientId} to block list for profile ${profileId}. Block list now has ${chatBlockLists[profileId].length} entries.`);
+        } else {
+            console.log(`[CHAT SERVICE] ${recipientId} already in block list for profile ${profileId}`);
         }
     },
 

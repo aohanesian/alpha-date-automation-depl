@@ -194,11 +194,481 @@ const authService = {
     },
 
     async authenticateWithAlphaDate(email, password, sessionId = null) {
+        console.log(`[INFO] Attempting to authenticate with Alpha.Date using browser-based API calls for user: ${email}`);
+        
+        try {
+            // First, try to get or create a browser session for this user
+            let browserSession = browserSessionManager.getSession(sessionId, email);
+            
+            // If no existing session, create a new one
+            if (!browserSession || !browserSession.page || browserSession.page.isClosed()) {
+                console.log('[INFO] Creating new browser session for authentication...');
+                browserSession = await this.createBrowserSession(sessionId, email);
+                
+                if (!browserSession) {
+                    console.log('[INFO] Could not create browser session, falling back to API method...');
+                    return await this.authenticateWithAPI(email, password);
+                }
+            }
+            
+            // Try browser-based login API call first
+            console.log('[INFO] Attempting browser-based login API call...');
+            const loginResult = await this.authenticateWithBrowserAPI(email, password, browserSession);
+            
+            if (loginResult.success) {
+                console.log('[INFO] Browser-based authentication successful');
+                
+                // Update the browser session with auth info
+                browserSession.token = loginResult.token;
+                browserSession.operatorId = loginResult.operatorId;
+                browserSession.email = email;
+                
+                // Store the updated session
+                if (sessionId) {
+                    browserSessionManager.storeSession(sessionId, browserSession, email);
+                }
+                
+                return {
+                    success: true,
+                    token: loginResult.token,
+                    operatorId: loginResult.operatorId,
+                    browserSession: browserSession,
+                    message: 'Authentication successful via browser API'
+                };
+            }
+            
+            // If browser API fails, fall back to the original Puppeteer method
+            console.log('[INFO] Browser API login failed, falling back to form-based login...');
+            return await this.authenticateWithPuppeteer(email, password, sessionId);
+            
+        } catch (error) {
+            console.error('[ERROR] Browser-based authentication error:', error);
+            console.log('[INFO] Falling back to API authentication method...');
+            return await this.authenticateWithAPI(email, password);
+        }
+    },
+
+    async createBrowserSession(sessionId = null, email = null) {
         let browser = null;
         let foundChromePath = null;
         
         try {
-            console.log(`[INFO] Attempting to authenticate with Alpha.Date using Puppeteer with stealth plugin for user: ${email}`);
+            console.log(`[INFO] Creating browser session for user: ${email || 'unknown'}`);
+            
+            // Check if ZenRows is configured and use it for better Cloudflare bypass
+            const zenRowsApiKey = process.env.ZENROWS_API_KEY || 'a99283cb465506ebb89875eeff4df36020d71c7b';
+            const useZenRows = process.env.USE_ZENROWS === 'true';
+            
+            if (useZenRows) {
+                console.log('[INFO] Using ZenRows for browser session...');
+                return await this.createZenRowsBrowserSession(sessionId, email, zenRowsApiKey);
+            }
+            
+            // On Render, prefer Puppeteer browser sessions over ZenRows for cost efficiency
+            console.log('[INFO] Creating Puppeteer browser session (optimal for Render)...');
+            return await this.createPuppeteerBrowserSession(sessionId, email);
+            
+        } catch (error) {
+            console.error('[ERROR] Error creating browser session:', error);
+            return null;
+        }
+    },
+
+    async createZenRowsBrowserSession(sessionId, email, apiKey) {
+        let browser = null;
+        
+        try {
+            console.log('[INFO] Creating ZenRows browser session...');
+            
+            // Connect to ZenRows browser
+            const connectionURL = `wss://browser.zenrows.com?apikey=${apiKey}`;
+            browser = await puppeteerCore.connect({ 
+                browserWSEndpoint: connectionURL,
+                defaultViewport: { width: 1366, height: 768 }
+            });
+            
+            console.log('[INFO] Connected to ZenRows browser');
+            
+            const page = await browser.newPage();
+            
+            // Navigate to Alpha.Date to establish session and get cf_clearance cookie
+            console.log('[INFO] Navigating to Alpha.Date to establish session...');
+            await page.goto('https://alpha.date/', {
+                waitUntil: 'networkidle2',
+                timeout: 30000
+            });
+            
+            // Wait for page to load and any Cloudflare challenges to resolve
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            
+            // Check if we're on the correct domain (not Cloudflare challenge)
+            const currentUrl = page.url();
+            console.log('[INFO] Current URL after navigation:', currentUrl);
+            
+            if (currentUrl.includes('cloudflare') || currentUrl.includes('challenge')) {
+                console.log('[WARN] Still on Cloudflare challenge page, waiting longer...');
+                await new Promise(resolve => setTimeout(resolve, 10000));
+            }
+            
+            // Create browser session object
+            const browserSession = {
+                browser: browser,
+                page: page,
+                token: null,
+                operatorId: null,
+                email: email,
+                createdAt: Date.now()
+            };
+            
+            // Store the session
+            if (sessionId) {
+                browserSessionManager.storeSession(sessionId, browserSession, email);
+                console.log(`[INFO] ZenRows browser session stored for user ${email} with session ID: ${sessionId}`);
+            }
+            
+            return browserSession;
+            
+        } catch (error) {
+            console.error('[ERROR] ZenRows browser session creation error:', error);
+            if (browser) {
+                await browser.close();
+            }
+            return null;
+        }
+    },
+
+    async createPuppeteerBrowserSession(sessionId, email) {
+        let browser = null;
+        let foundChromePath = null;
+        
+        try {
+            // Check if we're in production and if Puppeteer is available
+            if (process.env.NODE_ENV === 'production') {
+                console.log('[INFO] Production environment detected, checking Chrome availability...');
+                console.log('[INFO] PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH);
+                console.log('[INFO] PUPPETEER_CACHE_DIR:', process.env.PUPPETEER_CACHE_DIR);
+                
+                // Chrome path finding logic (keeping existing logic)
+                const { existsSync } = await import('fs');
+                const { execSync } = await import('child_process');
+                
+                // Try to find Chrome using system commands
+                let systemChromePath = null;
+                try {
+                    systemChromePath = execSync('which google-chrome', { encoding: 'utf8' }).trim();
+                } catch (err) {
+                    console.log('[INFO] google-chrome not found in PATH');
+                }
+                
+                const possiblePaths = [
+                    process.env.PUPPETEER_EXECUTABLE_PATH,
+                    systemChromePath,
+                    '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
+                    '/opt/render/.cache/puppeteer/chrome-linux/chrome',
+                    '/usr/bin/google-chrome-stable',
+                    '/usr/bin/google-chrome',
+                    '/usr/bin/chromium-browser',
+                    '/usr/bin/chromium'
+                ].filter(Boolean);
+                
+                console.log('[INFO] Checking Chrome paths...');
+                for (const path of possiblePaths) {
+                    if (existsSync(path)) {
+                        foundChromePath = path;
+                        console.log(`[INFO] Found Chrome at: ${path}`);
+                        break;
+                    } else {
+                        console.log(`[INFO] Chrome not found at: ${path}`);
+                    }
+                }
+                
+                // If still not found, try to search the filesystem
+                if (!foundChromePath) {
+                    console.log('[INFO] Searching filesystem for Chrome...');
+                    try {
+                        // First try to find the actual Chrome binary
+                        let searchResult = execSync('find /opt -name "chrome" -type f -executable 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
+                        if (searchResult && existsSync(searchResult)) {
+                            foundChromePath = searchResult;
+                            console.log(`[INFO] Found Chrome binary via filesystem search: ${searchResult}`);
+                        } else {
+                            // Fallback to broader search, excluding shell scripts
+                            searchResult = execSync('find /opt -name "*chrome*" -type f -executable -not -name "*.sh" 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
+                            if (searchResult && existsSync(searchResult)) {
+                                foundChromePath = searchResult;
+                                console.log(`[INFO] Found Chrome via filesystem search: ${searchResult}`);
+                            }
+                        }
+                    } catch (err) {
+                        console.log('[INFO] Filesystem search failed:', err.message);
+                    }
+                }
+                
+                // If still not found, try to install Puppeteer browsers
+                if (!foundChromePath) {
+                    console.log('[INFO] Chrome not found, attempting to install Puppeteer browsers...');
+                    try {
+                        // Install Puppeteer browsers
+                        execSync('npx puppeteer browsers install chrome --force', { stdio: 'pipe' });
+                        
+                        // Check if installation was successful
+                        try {
+                            const puppeteerPath = puppeteer.executablePath();
+                            if (puppeteerPath && existsSync(puppeteerPath)) {
+                                foundChromePath = puppeteerPath;
+                                console.log(`[INFO] Puppeteer Chrome installed successfully at: ${puppeteerPath}`);
+                            }
+                        } catch (err) {
+                            console.log('[INFO] Could not get Puppeteer executable path after installation:', err.message);
+                        }
+                    } catch (err) {
+                        console.log('[INFO] Puppeteer browser installation failed:', err.message);
+                    }
+                }
+                
+                if (!foundChromePath) {
+                    console.log('[ERROR] No Chrome executable found and installation failed');
+                    console.log('[INFO] Skipping Puppeteer authentication, using API method directly');
+                    return await this.authenticateWithAPI(email, password);
+                }
+                
+                try {
+                    // Test if Puppeteer can launch with the found path
+                    console.log('[INFO] Testing Chrome launch with path:', foundChromePath);
+                    const testBrowser = await puppeteer.launch({
+                        headless: 'new',
+                        executablePath: foundChromePath,
+                        args: [
+                            '--no-sandbox',
+                            '--disable-setuid-sandbox',
+                            '--disable-dev-shm-usage',
+                            '--disable-gpu',
+                            '--disable-software-rasterizer'
+                        ]
+                    });
+                    await testBrowser.close();
+                    console.log('[INFO] Puppeteer test launch successful with path:', foundChromePath);
+                } catch (testError) {
+                    console.error('[ERROR] Puppeteer test launch failed:', testError.message);
+                    console.error('[ERROR] Full error details:', testError);
+                    console.log('[INFO] Skipping Puppeteer authentication, using API method directly');
+                    return await this.authenticateWithAPI(email, password);
+                }
+            }
+            
+            // Launch browser with enhanced stealth settings
+            const launchOptions = {
+                headless: process.env.NODE_ENV === 'production' ? 'new' : false, // Use headless in production
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--disable-gpu',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor',
+                    // Additional stealth arguments
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-extensions',
+                    '--disable-plugins',
+                    '--disable-default-apps',
+                    '--disable-sync',
+                    '--disable-translate',
+                    '--hide-scrollbars',
+                    '--mute-audio',
+                    '--no-default-browser-check',
+                    '--no-pings',
+                    '--disable-client-side-phishing-detection',
+                    '--disable-component-update',
+                    '--disable-domain-reliability',
+                    '--disable-features=TranslateUI',
+                    '--disable-ipc-flooding-protection',
+                    '--disable-hang-monitor',
+                    '--disable-prompt-on-repost',
+                    '--disable-background-networking'
+                ]
+            };
+
+            // In production, we need to specify the executable path
+            if (process.env.NODE_ENV === 'production' && foundChromePath) {
+                launchOptions.executablePath = foundChromePath;
+                console.log(`[INFO] Using found Chrome executable for main launch: ${foundChromePath}`);
+            }
+
+            // Create unique user data directory for each session to avoid conflicts
+            const userDataDir = sessionId ? `/tmp/chrome-user-${sessionId}` : `/tmp/chrome-user-${Date.now()}`;
+            launchOptions.userDataDir = userDataDir;
+            
+            console.log(`[INFO] Launching Chrome instance for user ${email} with user data dir: ${userDataDir}`);
+            browser = await puppeteer.launch(launchOptions);
+
+            const page = await browser.newPage();
+
+            // Evaluate stealth effectiveness
+            await this.evaluateStealthEffectiveness(page);
+
+            // Set realistic user agent with more variety
+            const userAgents = [
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+            ];
+            const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+            await page.setUserAgent(randomUserAgent);
+
+            // Randomize viewport to avoid fingerprinting
+            const viewports = [
+                { width: 1366, height: 768 },
+                { width: 1920, height: 1080 },
+                { width: 1440, height: 900 },
+                { width: 1536, height: 864 },
+                { width: 1280, height: 720 }
+            ];
+            const randomViewport = viewports[Math.floor(Math.random() * viewports.length)];
+            await page.setViewport(randomViewport);
+
+            // Set additional headers to appear more human-like
+            await page.setExtraHTTPHeaders({
+                'Accept-Language': 'en-US,en;q=0.9,en;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0'
+            });
+
+            // Navigate to Alpha.Date to establish session and get cf_clearance cookie
+            console.log('[INFO] Navigating to Alpha.Date to establish session...');
+            await page.goto('https://alpha.date/', {
+                waitUntil: 'networkidle2',
+                timeout: 30000
+            });
+
+            // Wait for page to load and any Cloudflare challenges to resolve
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            // Check if we're on the correct domain (not Cloudflare challenge)
+            const currentUrl = page.url();
+            console.log('[INFO] Current URL after navigation:', currentUrl);
+
+            if (currentUrl.includes('cloudflare') || currentUrl.includes('challenge')) {
+                console.log('[WARN] Still on Cloudflare challenge page, waiting longer...');
+                await new Promise(resolve => setTimeout(resolve, 10000));
+            }
+
+            // Create browser session object
+            const browserSession = {
+                browser: browser,
+                page: page,
+                token: null,
+                operatorId: null,
+                email: email,
+                createdAt: Date.now()
+            };
+
+            // Store the session
+            if (sessionId) {
+                browserSessionManager.storeSession(sessionId, browserSession, email);
+                console.log(`[INFO] Puppeteer browser session stored for user ${email} with session ID: ${sessionId}`);
+            }
+
+            return browserSession;
+
+        } catch (error) {
+            console.error('[ERROR] Puppeteer browser session creation error:', error);
+            if (browser) {
+                await browser.close();
+            }
+            return null;
+        }
+    },
+
+    async authenticateWithBrowserAPI(email, password, browserSession) {
+        try {
+            console.log(`[INFO] Attempting browser-based API authentication for: ${email}`);
+            
+            if (!browserSession || !browserSession.page) {
+                throw new Error('No valid browser session available');
+            }
+
+            // Make login API call from browser context (inherits cf_clearance cookie)
+            const result = await browserSession.page.evaluate(async (email, password) => {
+                try {
+                    const response = await fetch('https://alpha.date/api/login/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json, text/plain, */*',
+                            'Accept-Language': 'en-US,en;q=0.9',
+                            'Accept-Encoding': 'gzip, deflate, br',
+                            'Connection': 'keep-alive',
+                            'Sec-Fetch-Dest': 'empty',
+                            'Sec-Fetch-Mode': 'cors',
+                            'Sec-Fetch-Site': 'same-origin'
+                        },
+                        body: JSON.stringify({
+                            email: email,
+                            password: password
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    return { success: true, data };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            }, email, password);
+
+            if (result.success && result.data.token) {
+                console.log('[INFO] Browser-based API authentication successful');
+                
+                // Try to get operator ID from token
+                const operatorId = result.data.operator_id || this.decodeJWTToken(result.data.token);
+                
+                return {
+                    success: true,
+                    token: result.data.token,
+                    operatorId: operatorId,
+                    message: 'Authentication successful via browser API'
+                };
+            } else {
+                console.log('[INFO] Browser-based API authentication failed:', result.error);
+                return {
+                    success: false,
+                    message: result.error || 'Authentication failed'
+                };
+            }
+
+        } catch (error) {
+            console.error('[ERROR] Browser-based API authentication error:', error);
+            return {
+                success: false,
+                message: `Browser API error: ${error.message}`
+            };
+        }
+    },
+
+    // Renamed original method to be more specific
+    async authenticateWithPuppeteer(email, password, sessionId = null) {
+        let browser = null;
+        let foundChromePath = null;
+        
+        try {
+            console.log(`[INFO] Attempting to authenticate with Alpha.Date using Puppeteer form-based login for user: ${email}`);
             
             // Check if ZenRows is configured and use it for better Cloudflare bypass
             const zenRowsApiKey = process.env.ZENROWS_API_KEY || 'a99283cb465506ebb89875eeff4df36020d71c7b';
@@ -215,7 +685,7 @@ const authService = {
                 console.log('[INFO] PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH);
                 console.log('[INFO] PUPPETEER_CACHE_DIR:', process.env.PUPPETEER_CACHE_DIR);
                 
-                // First, try to find the correct Chrome path
+                // Chrome path finding logic (keeping existing logic)
                 const { existsSync } = await import('fs');
                 const { execSync } = await import('child_process');
                 

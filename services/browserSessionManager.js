@@ -111,6 +111,68 @@ const browserSessionManager = {
         }
     },
 
+    // Enhanced login method using browser API calls
+    async authenticateUser(email, password, sessionId = null) {
+        console.log(`[BROWSER SESSION] Attempting browser-based authentication for: ${email}`);
+        
+        try {
+            // Check if we already have a session for this user
+            let session = this.getSession(sessionId, email);
+            
+            // If no session exists, we need to create one
+            // This will be handled by authService.createBrowserSession()
+            if (!session) {
+                console.log('[BROWSER SESSION] No existing session found, will need to create one');
+                return null;
+            }
+            
+            // Use the existing session to make login API call
+            const loginResult = await this.makeApiCall(sessionId, 'https://alpha.date/api/login/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/plain, */*',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Sec-Fetch-Dest': 'empty',
+                    'Sec-Fetch-Mode': 'cors',
+                    'Sec-Fetch-Site': 'same-origin'
+                },
+                body: {
+                    email: email,
+                    password: password
+                }
+            }, email);
+            
+            if (loginResult && loginResult.token) {
+                console.log('[BROWSER SESSION] Browser-based authentication successful');
+                
+                // Update session with auth info
+                session.token = loginResult.token;
+                session.operatorId = loginResult.operator_id;
+                session.email = email;
+                
+                // Re-store the updated session
+                this.storeSession(sessionId, session, email);
+                
+                return {
+                    success: true,
+                    token: loginResult.token,
+                    operatorId: loginResult.operator_id,
+                    browserSession: session
+                };
+            } else {
+                console.log('[BROWSER SESSION] Browser-based authentication failed');
+                return { success: false, message: 'Authentication failed' };
+            }
+            
+        } catch (error) {
+            console.error('[BROWSER SESSION] Authentication error:', error);
+            return { success: false, message: error.message };
+        }
+    },
+
     // Check if session exists and is valid
     hasValidSession(sessionId) {
         const session = browserSessions.get(sessionId);

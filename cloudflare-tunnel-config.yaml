@@ -1,0 +1,10 @@
+tunnel: c47ff772-4b3f-4187-8d3a-47573f4c1b66
+credentials-file: /Users/artur/.cloudflared/c47ff772-4b3f-4187-8d3a-47573f4c1b66.json
+
+ingress:
+  - service: http://localhost:3000
+
+metrics: 0.0.0.0:2000
+logLevel: info
+protocol: quic
+http2-origin: true

@@ -22,16 +22,27 @@ bore local 3000 --to bore.pub
 - ✅ **Reliable tunneling**
 - ✅ **No authentication required**
 
-### Option 2: Cloudflare Tunnel
+### Option 2: Cloudflare Tunnel (Persistent)
 ```bash
 # Install
 brew install cloudflared
 
+# Setup credentials (one-time)
+./manage-cloudflare-tunnel.sh setup
+
 # Start tunnel
 ./cloudflare-tunnel.sh
-# or
-cloudflared tunnel --url http://localhost:3000
+# or use the management script
+./manage-cloudflare-tunnel.sh start
 ```
+
+**🌟 Why Cloudflare Tunnel?**
+- ✅ **Persistent tunnel** (alpha-auto)
+- ✅ **Custom domain support**
+- ✅ **Enterprise-grade security**
+- ✅ **Advanced configuration options**
+- ✅ **Built-in monitoring**
+- ✅ **No request limits**
 
 ### Option 3: Ngrok (Limited)
 ```bash
@@ -68,7 +79,8 @@ ngrok http 3000
 ### Start Tunnels
 ```bash
 ./bore-tunnel.sh          # Bore CLI
-./cloudflare-tunnel.sh    # Cloudflare
+./cloudflare-tunnel.sh    # Cloudflare (simple)
+./manage-cloudflare-tunnel.sh start  # Cloudflare (advanced)
 ./tunnel.sh              # Ngrok
 ./tunnel-options.sh      # Interactive menu
 ```
@@ -76,13 +88,15 @@ ngrok http 3000
 ### Check Status
 ```bash
 ./manage-bore-tunnel.sh   # Bore CLI status
+./manage-cloudflare-tunnel.sh status  # Cloudflare status
 ./manage-tunnel.sh        # Ngrok status
 ```
 
 ### Stop Tunnels
 ```bash
 pkill -f 'bore local'     # Stop Bore CLI
-pkill cloudflared        # Stop Cloudflare
+./manage-cloudflare-tunnel.sh stop  # Stop Cloudflare (recommended)
+pkill cloudflared        # Stop Cloudflare (force)
 pkill ngrok              # Stop Ngrok
 ```
 
@@ -129,6 +143,79 @@ lsof -i :3000
 - **No authentication** required for Bore CLI or Cloudflare
 - **Update your Render environment variables** when tunnel URL changes
 - **Keep tunnel URLs private** for security
+
+## 🌐 Cloudflare Tunnel (alpha-auto) - Detailed Setup
+
+### Current Tunnel Configuration
+- **Tunnel Name**: alpha-auto
+- **Tunnel ID**: b40b4382-13e7-48c0-987a-ee7b8e9905f3
+- **Connector ID**: 4defea4b-c04d-47ef-934e-d82265f9e922
+- **Status**: HEALTHY
+
+### First-Time Setup
+1. **Install cloudflared**:
+   ```bash
+   ./manage-cloudflare-tunnel.sh install
+   ```
+
+2. **Setup credentials**:
+   ```bash
+   ./manage-cloudflare-tunnel.sh setup
+   ```
+
+3. **Start tunnel**:
+   ```bash
+   ./manage-cloudflare-tunnel.sh start
+   ```
+
+### Management Commands
+```bash
+# Basic operations
+./manage-cloudflare-tunnel.sh start      # Start tunnel
+./manage-cloudflare-tunnel.sh stop       # Stop tunnel
+./manage-cloudflare-tunnel.sh restart    # Restart tunnel
+./manage-cloudflare-tunnel.sh status     # Show status
+
+# Advanced operations
+./manage-cloudflare-tunnel.sh logs       # Show logs
+./manage-cloudflare-tunnel.sh config     # Show configuration
+./manage-cloudflare-tunnel.sh test       # Test connectivity
+./manage-cloudflare-tunnel.sh routes     # Show routes
+
+# Monitoring
+./cloudflare-tunnel-monitor.sh daemon    # Start monitor daemon
+./cloudflare-tunnel-monitor.sh status    # Check monitor status
+./cloudflare-tunnel-monitor.sh stop      # Stop monitor
+```
+
+### Configuration Files
+- **Main Config**: `cloudflare-tunnel-config.yaml`
+- **Credentials**: `~/.cloudflared/b40b4382-13e7-48c0-987a-ee7b8e9905f3.json`
+- **Template**: `cloudflare-credentials-template.json`
+
+### Monitoring Features
+The tunnel includes built-in monitoring that:
+- ✅ Automatically checks tunnel health every 30 seconds
+- ✅ Restarts tunnel if failures detected
+- ✅ Monitors local server connectivity
+- ✅ Logs all activities
+- ✅ Can run as background daemon
+
+### Troubleshooting
+```bash
+# Check tunnel status
+./manage-cloudflare-tunnel.sh status
+
+# View logs
+./manage-cloudflare-tunnel.sh logs
+
+# Test connectivity
+./manage-cloudflare-tunnel.sh test
+
+# Reset tunnel
+./manage-cloudflare-tunnel.sh stop
+./manage-cloudflare-tunnel.sh start
+```
 
 ## 🔗 Resources
 
