@@ -277,11 +277,11 @@ test_tunnel() {
     fi
     
     # Test local server
-    if curl -s http://localhost:3000 > /dev/null; then
-        print_success "✅ Local server (localhost:3000) is responding"
+    if curl -s http://localhost:5000 > /dev/null; then
+        print_success "✅ Local server (localhost:5000) is responding"
     else
-        print_error "❌ Local server (localhost:3000) is not responding"
-        print_warning "Make sure your application is running on port 3000"
+        print_error "❌ Local server (localhost:5000) is not responding"
+        print_warning "Make sure your application is running on port 5000"
     fi
     
     # Test tunnel status via cloudflared

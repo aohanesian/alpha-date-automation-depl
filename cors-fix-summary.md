@@ -14,9 +14,9 @@ Updated the `allowedOrigins` array to include both frontend origins:
 const allowedOrigins = [
     'https://alpha-date-automation-depl.onrender.com',
     'https://alpha-date-automation-depl-commercial.onrender.com',
-    'http://localhost:3000',
+    'http://localhost:5000',
     'http://localhost:5173',
-    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5000',
     'http://127.0.0.1:5173',
     'https://www.alpha-bot.date',
     'https://alpha-bot.date',

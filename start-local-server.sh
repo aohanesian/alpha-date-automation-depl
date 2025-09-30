@@ -5,7 +5,7 @@ echo "Starting Alpha Date Automation server on Mac..."
 
 # Set environment variables for local deployment
 export NODE_ENV=production
-export PORT=3000
+export PORT=5000
 
 # Install dependencies if needed
 if [ ! -d "node_modules" ]; then
@@ -14,8 +14,8 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # Start the server
-echo "Starting server on port 3000..."
-echo "Server will be available at: http://localhost:3000"
+echo "Starting server on port 5000..."
+echo "Server will be available at: http://localhost:5000"
 echo ""
 echo "To expose to internet, run: ./tunnel.sh"
 echo ""

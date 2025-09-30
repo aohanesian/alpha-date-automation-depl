@@ -18,7 +18,7 @@ brew install bore-cli
 # Start tunnel
 ./bore-tunnel.sh
 # or
-bore local 3000 --to bore.pub
+bore local 5000 --to bore.pub
 ```
 
 **Benefits:**
@@ -35,7 +35,7 @@ brew install cloudflared
 # Start tunnel
 ./cloudflare-tunnel.sh
 # or
-cloudflared tunnel --url http://localhost:3000
+cloudflared tunnel --url http://localhost:5000
 ```
 
 ### Option 3: Ngrok (Limited)
@@ -49,7 +49,7 @@ ngrok config add-authtoken YOUR_TOKEN
 # Start tunnel
 ./tunnel.sh
 # or
-ngrok http 3000
+ngrok http 5000
 ```
 
 **Note:** Ngrok free tier has 40 connections/minute limit.
@@ -65,7 +65,7 @@ ngrok http 3000
 ./start-local-server.sh
 ```
 
-The server will be available at `http://localhost:3000`
+The server will be available at `http://localhost:5000`
 
 ### 3. Create tunnel
 
@@ -117,7 +117,7 @@ Use the `render-frontend.yaml` configuration:
 
 ### Tunnel issues
 - Make sure your chosen tunnel solution is installed
-- Check if port 3000 is available
+- Check if port 5000 is available
 - Restart the tunnel if needed
 - For ngrok: ensure it's authenticated
 - For bore: no authentication needed
@@ -125,7 +125,7 @@ Use the `render-frontend.yaml` configuration:
 ### Server connection issues
 - Verify the tunnel URL is correct in Render environment variables
 - Check if your Mac's firewall is blocking connections
-- Ensure the server is running on port 3000
+- Ensure the server is running on port 5000
 
 ### Performance
 - Bore CLI: No limits, best for high traffic

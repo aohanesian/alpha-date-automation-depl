@@ -12,7 +12,7 @@ if pgrep -f "bore local" > /dev/null; then
     echo "   https://[random-id].bore.pub"
     echo ""
     echo "📋 To get your tunnel URL, check the bore output or run:"
-    echo "   bore local 3000 --to bore.pub"
+    echo "   bore local 5000 --to bore.pub"
     echo ""
     echo "🔗 Test your tunnel:"
     echo "   curl https://[your-bore-url]"

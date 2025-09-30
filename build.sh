@@ -77,16 +77,7 @@ fi
 echo "Installing Node.js dependencies..."
 npm install
 
-# Install Puppeteer browsers (only in production with proper permissions)
-if [ "$NODE_ENV" = "production" ] && [ -w "/opt" ]; then
-    echo "Installing Puppeteer browsers..."
-    npx puppeteer browsers install chrome --force
-    
-    echo "=== Puppeteer Debug ==="
-    echo "Puppeteer browsers: $(npx puppeteer browsers list || echo 'Failed to list')"
-else
-    echo "Skipping Puppeteer browser installation (not production environment or no /opt write access)"
-fi
+# Note: Puppeteer browsers are no longer needed - we only use system Chrome
 
 # Only run Chrome tests in production environment with proper setup
 if [ "$NODE_ENV" = "production" ] && [ -w "/opt" ]; then

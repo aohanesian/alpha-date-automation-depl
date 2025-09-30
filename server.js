@@ -17,36 +17,22 @@ import mailController from './controllers/mailController.js';
 import authController from './controllers/authController.js';
 import captchaController from './controllers/captchaController.js';
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// Services
+import sharedChromeManager from './services/sharedChromeManager.js';
 
-// Simple Chrome check on startup
-if (process.env.NODE_ENV === 'production') {
-    console.log('[STARTUP] Checking Chrome availability...');
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Initialize shared Chrome instance on startup
+async function initializeSharedChrome() {
     try {
-        const { existsSync } = await import('fs');
-        
-        const chromePaths = [
-            '/usr/bin/google-chrome-stable',
-            '/usr/bin/google-chrome',
-            '/usr/bin/chromium-browser',
-            '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome'
-        ];
-        
-        let chromeFound = false;
-        for (const path of chromePaths) {
-            if (existsSync(path)) {
-                console.log(`[STARTUP] ✅ Chrome found at: ${path}`);
-                chromeFound = true;
-                break;
-            }
-        }
-        
-        if (!chromeFound) {
-            console.log('[STARTUP] ⚠️  No Chrome found - browser sessions will use ZenRows fallback');
-        }
+        console.log('[STARTUP] Initializing shared Chrome instance...');
+        await sharedChromeManager.initialize();
+        console.log('[STARTUP] ✅ Shared Chrome instance initialized successfully');
     } catch (error) {
-        console.log('[STARTUP] Chrome check failed:', error.message);
+        console.error('[STARTUP] ❌ Failed to initialize shared Chrome:', error.message);
+        console.error('[STARTUP] Application requires system Chrome to be installed and working');
+        process.exit(1); // Exit if Chrome cannot be initialized
     }
 }
 
@@ -136,9 +122,9 @@ app.use(cors({
         const allowedOrigins = [
             'https://alpha-date-automation-depl.onrender.com',
             'https://alpha-date-automation-depl-commercial.onrender.com',
-            'http://localhost:3000',
+            'http://localhost:5000',
             'http://localhost:5173',
-            'http://127.0.0.1:3000',
+            'http://127.0.0.1:5000',
             'http://127.0.0.1:5173',
             'https://www.alpha-bot.date',
             'https://alpha-bot.date',
@@ -324,46 +310,15 @@ app.get('/api/debug-screenshots/:filename', (req, res) => {
 // Chrome test endpoint
 app.get('/api/chrome-test', async (req, res) => {
     try {
-        const puppeteer = await import('puppeteer');
-        const { existsSync } = await import('fs');
+        const stats = sharedChromeManager.getStats();
         
-        const result = {
+        res.json({
             success: true,
             timestamp: new Date().toISOString(),
             environment: process.env.NODE_ENV || 'development',
-            executablePath: puppeteer.default.executablePath(),
-            environmentVariables: {
-                PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH,
-                PUPPETEER_CACHE_DIR: process.env.PUPPETEER_CACHE_DIR,
-                NODE_ENV: process.env.NODE_ENV
-            },
-            chromePaths: {
-                puppeteerPath: puppeteer.default.executablePath(),
-                puppeteerPathExists: existsSync(puppeteer.default.executablePath()),
-                envPath: process.env.PUPPETEER_EXECUTABLE_PATH,
-                envPathExists: process.env.PUPPETEER_EXECUTABLE_PATH ? existsSync(process.env.PUPPETEER_EXECUTABLE_PATH) : false,
-                commonPaths: {
-                    '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome': existsSync('/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome'),
-                    '/opt/render/.cache/puppeteer/chrome-linux/chrome': existsSync('/opt/render/.cache/puppeteer/chrome-linux/chrome'),
-                    '/usr/bin/google-chrome-stable': existsSync('/usr/bin/google-chrome-stable'),
-                    '/usr/bin/google-chrome': existsSync('/usr/bin/google-chrome')
-                }
-            }
-        };
-        
-        // Try to launch Chrome
-        try {
-            const browser = await puppeteer.default.launch({
-                headless: 'new',
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
-            });
-            await browser.close();
-            result.chromeLaunch = { success: true, message: 'Chrome launched successfully' };
-        } catch (error) {
-            result.chromeLaunch = { success: false, error: error.message };
-        }
-        
-        res.json(result);
+            sharedChrome: stats,
+            message: stats.browserConnected ? 'Shared Chrome instance is running' : 'Shared Chrome instance is not running'
+        });
     } catch (error) {
         res.json({
             success: false,
@@ -409,6 +364,9 @@ app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
     
+    // Initialize shared Chrome instance
+    await initializeSharedChrome();
+    
     // Load initial statistics from Firebase
     await loadStatisticsFromFirebase();
     
@@ -418,4 +376,17 @@ app.listen(PORT, async () => {
     }, 60 * 60 * 1000); // Every hour
     
     console.log('[STATISTICS] Server started with statistics tracking enabled');
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+    console.log('[SHUTDOWN] Received SIGINT, shutting down gracefully...');
+    await sharedChromeManager.shutdown();
+    process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+    console.log('[SHUTDOWN] Received SIGTERM, shutting down gracefully...');
+    await sharedChromeManager.shutdown();
+    process.exit(0);
 });

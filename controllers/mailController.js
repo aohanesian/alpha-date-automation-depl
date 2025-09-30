@@ -1,8 +1,7 @@
 // controllers/mailController.js
 import express from 'express';
 import mailService from '../services/mailService.js';
-import browserSessionManager from '../services/browserSessionManager.js';
-import sessionAwareService from '../services/sessionAwareService.js';
+import sharedChromeManager from '../services/sharedChromeManager.js';
 
 const router = express.Router();
 
@@ -77,34 +76,32 @@ router.get('/profiles', async (req, res) => {
             });
         }
 
-        // Try to get profiles using browser session first
+        // Try to get profiles using shared Chrome session
         let profiles = null;
         
-        // Try to find browser session by session ID or email
         const email = req.userEmail || req.session.email;
-        console.log(`[MAIL] Looking for browser session for email: ${email}`);
+        console.log(`[MAIL] Looking for shared Chrome session for email: ${email}`);
         
-        if (req.session.browserSession && req.session.browserSession.hasBrowserSession) {
-            console.log('[MAIL] Attempting to get profiles using browser session...');
-            profiles = await browserSessionManager.makeApiCall(
-                req.sessionID, 
-                'https://alpha.date/api/operator/profiles',
-                {
-                    method: 'GET',
-                    headers: { 'Authorization': `Bearer ${req.token}` }
-                },
-                email
-            );
+        if (req.session.browserSession && req.session.browserSession.hasBrowserSession && req.session.browserSession.userId) {
+            console.log('[MAIL] Attempting to get profiles using shared Chrome session...');
+            try {
+                profiles = await sharedChromeManager.makeApiCall(
+                    req.session.browserSession.userId,
+                    'https://alpha.date/api/operator/profiles',
+                    {
+                        method: 'GET',
+                        headers: { 'Authorization': `Bearer ${req.token}` }
+                    }
+                );
+            } catch (error) {
+                console.log('[MAIL] Shared Chrome API call failed:', error.message);
+            }
         }
         
-        // Fallback to direct API call if browser session failed
+        // Fallback to direct API call if shared Chrome failed
         if (!profiles) {
             console.log('[MAIL] Falling back to direct API call for profiles...');
-            
-            // Try to get browser session for mail service
-            const browserSession = sessionAwareService.getBrowserSession(req.sessionID, email);
-            
-            profiles = await mailService.getProfiles(req.token, browserSession);
+            profiles = await mailService.getProfiles(req.token, null);
         }
         res.json({ success: true, profiles });
     } catch (error) {
@@ -126,7 +123,7 @@ router.get('/attachments/:profileId', async (req, res) => {
 
         // Get browser session for this request
         const email = req.userEmail || req.session.email;
-        const browserSession = sessionAwareService.getBrowserSession(req.sessionID, email);
+        const browserSession = req.session.browserSession || null;
         
         const attachments = await mailService.getAttachments(profileId, token, forceRefresh === 'true', browserSession);
         res.json({ success: true, attachments });
@@ -191,21 +188,13 @@ router.post('/start', async (req, res) => {
 
         // Get browser session for this request
         const email = req.session.email || req.userEmail;
-        console.log(`[MAIL CONTROLLER] Attempting to get browser session for user ${email} with session ID: ${req.sessionID}`);
+        const browserSession = req.session.browserSession || null;
         
-        // Try multiple ways to get browser session
-        let browserSession = sessionAwareService.getBrowserSession(req.sessionID, email);
-        
-        // If not found, try with just session ID
-        if (!browserSession) {
-            browserSession = sessionAwareService.getBrowserSession(req.sessionID);
-        }
-        
-        console.log(`[MAIL CONTROLLER] Browser session result for user ${email}:`, {
+        console.log(`[MAIL CONTROLLER] Browser session for user ${email}:`, {
             sessionId: req.sessionID,
             hasBrowserSession: !!browserSession,
-            hasPage: !!browserSession?.page,
-            pageClosed: browserSession?.page?.isClosed?.() || 'unknown',
+            userId: browserSession?.userId,
+            method: browserSession?.method,
             sessionEmail: req.session.email,
             sessionToken: !!req.session.token,
             sessionOperatorId: req.session.operatorId

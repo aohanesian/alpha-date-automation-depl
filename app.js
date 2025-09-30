@@ -158,14 +158,15 @@ document.addEventListener('DOMContentLoaded', () => {
         loginStatus.className = 'status processing';
 
         try {
-            // Log the login attempt
-            await fetch(`${API_URL}/auth/log-login`, {
+            // Log the login attempt (non-blocking)
+            fetch(`${API_URL}/auth/log-login`, {
                 method: 'POST',
+                credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ email, password })
-            });
+            }).catch(err => console.log('Login log failed (non-critical):', err));
 
             // Use new backend authentication endpoint
             const authResponse = await fetch(`${API_URL}/auth/alpha-login`, {

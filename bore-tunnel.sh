@@ -9,13 +9,13 @@ if ! command -v bore &> /dev/null; then
     brew install bore-cli
 fi
 
-# Start bore tunnel on port 3000
-echo "🚀 Starting bore tunnel on port 3000..."
+# Start bore tunnel on port 5000
+echo "🚀 Starting bore tunnel on port 5000..."
 echo "📡 This will create a public HTTPS URL for your local server"
 echo ""
 
 # Start bore tunnel
-bore local 3000 --to bore.pub
+bore local 5000 --to bore.pub
 
 echo ""
 echo "✅ Bore tunnel started!"

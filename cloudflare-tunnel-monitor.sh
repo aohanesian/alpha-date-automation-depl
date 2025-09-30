@@ -44,7 +44,7 @@ check_tunnel_health() {
     fi
     
     # Check if local server is responding
-    if ! curl -s --max-time 5 http://localhost:3000 > /dev/null; then
+    if ! curl -s --max-time 5 http://localhost:5000 > /dev/null; then
         log_warning "Local server not responding"
         return 2
     fi

@@ -1,7 +1,6 @@
 // controllers/authController.js
 import express from 'express';
 import authService from '../services/authService.js';
-import browserSessionManager from '../services/browserSessionManager.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -146,17 +145,17 @@ router.post('/alpha-login', async (req, res) => {
         req.session.token = authResult.token;
         req.session.operatorId = authResult.operatorId;
         
-        // Store browser session if available (for API calls from browser context)
+        // Store browser session info for shared Chrome usage
         if (authResult.browserSession) {
             req.session.browserSession = {
                 hasBrowserSession: true,
+                userId: authResult.browserSession.userId,
                 token: authResult.token,
-                operatorId: authResult.operatorId
+                operatorId: authResult.operatorId,
+                method: authResult.browserSession.method
             };
             
-            // Store in browser session manager
-            browserSessionManager.storeSession(req.sessionID, authResult.browserSession, email);
-            console.log('[AUTH] Browser session stored for future API calls');
+            console.log('[AUTH] Shared Chrome session stored for user:', email, 'with userId:', authResult.browserSession.userId);
         }
 
         // Step 4: Online heartbeat is now handled per-profile when processing starts

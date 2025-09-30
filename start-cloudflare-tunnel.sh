@@ -5,7 +5,7 @@ echo "📡 This will create a public HTTPS URL for your local server"
 echo ""
 
 # Start cloudflared tunnel and capture the URL
-cloudflared tunnel --url http://localhost:3000 2>&1 | while IFS= read -r line; do
+cloudflared tunnel --url http://localhost:5000 2>&1 | while IFS= read -r line; do
     echo "$line"
     
     # Look for the tunnel URL in the output

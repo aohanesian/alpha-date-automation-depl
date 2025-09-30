@@ -6,8 +6,8 @@ echo "✅ No request limits"
 echo "✅ Free and reliable"
 echo ""
 
-# Start LocalTunnel on port 3000
-lt --port 3000 --subdomain alpha-date-automation
+# Start LocalTunnel on port 5000
+lt --port 5000 --subdomain alpha-date-automation
 
 echo ""
 echo "✅ LocalTunnel started!"

@@ -126,7 +126,7 @@ npm run test:captcha:manual
 Access the web-based test interface:
 
 ```
-http://localhost:3000/captcha-test
+http://localhost:5000/captcha-test
 ```
 
 This provides a user-friendly interface to test all captcha solving features.

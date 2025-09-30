@@ -1,0 +1,23 @@
+services:
+  # Alpha Date Automation Service for Windows Server 2019
+  - type: web
+    name: alpha-date-automation-windows
+    runtime: node
+    buildCommand: npm run build:windows
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: USE_ZENROWS
+        value: "false"
+      - key: ZENROWS_API_KEY
+        value: "a99283cb465506ebb89875eeff4df36020d71c7b"
+      - key: PUPPETEER_CACHE_DIR
+        value: "%USERPROFILE%\.cache\puppeteer"
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: "false"
+      - key: PUPPETEER_DISABLE_HEADLESS_WARNING
+        value: "true"
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: "C:\Program Files\Google\Chrome\Application\chrome.exe"
+

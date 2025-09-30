@@ -28,7 +28,7 @@ case $choice in
         fi
         
         # Start bore tunnel
-        bore local 3000 --to bore.pub
+        bore local 5000 --to bore.pub
         ;;
     2)
         echo ""
@@ -44,7 +44,7 @@ case $choice in
         fi
         
         # Start cloudflare tunnel
-        cloudflared tunnel --url http://localhost:3000
+        cloudflared tunnel --url http://localhost:5000
         ;;
     3)
         echo ""
@@ -60,7 +60,7 @@ case $choice in
         fi
         
         # Start ngrok tunnel
-        ngrok http 3000 --log=stdout
+        ngrok http 5000 --log=stdout
         ;;
     4)
         echo "Exiting..."

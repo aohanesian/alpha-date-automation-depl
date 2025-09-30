@@ -94,10 +94,10 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 # Test 7: Check if local server port is available
-run_test "Checking if port 3000 is available for local server" \
-    "! lsof -i :3000 &> /dev/null" \
-    "Port 3000 is available" \
-    "Port 3000 is in use - make sure your server is running"
+run_test "Checking if port 5000 is available for local server" \
+    "! lsof -i :5000 &> /dev/null" \
+    "Port 5000 is available" \
+    "Port 5000 is in use - make sure your server is running"
 
 # Test 8: Test tunnel info (if credentials exist)
 if [ -f "$CREDENTIALS_FILE" ] && command -v cloudflared &> /dev/null; then

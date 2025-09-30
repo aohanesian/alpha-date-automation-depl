@@ -5,25 +5,40 @@ import { existsSync } from 'fs';
 import { platform } from 'os';
 
 export async function ensureChrome() {
-    if (platform() !== 'linux' || process.env.NODE_ENV !== 'production') {
+    const currentPlatform = platform();
+    if ((currentPlatform !== 'linux' && currentPlatform !== 'win32') || process.env.NODE_ENV !== 'production') {
         return null;
     }
 
     console.log('[CHROME] Checking Chrome availability...');
 
     // Check if Chrome is already installed
-    const chromePaths = [
-        '/usr/bin/google-chrome-stable',
-        '/usr/bin/google-chrome',
-        '/usr/bin/chromium-browser',
-        '/usr/bin/chromium'
-    ];
+    let chromePaths = [];
+    
+    if (currentPlatform === 'linux') {
+        chromePaths = [
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/chromium'
+        ];
+    } else if (currentPlatform === 'win32') {
+        chromePaths = [
+            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+            process.env.PROGRAMFILES + '\\Google\\Chrome\\Application\\chrome.exe',
+            process.env['PROGRAMFILES(X86)'] + '\\Google\\Chrome\\Application\\chrome.exe'
+        ];
+    }
 
     for (const path of chromePaths) {
         if (existsSync(path)) {
             try {
-                // Test if Chrome works
-                execSync(`${path} --version --no-sandbox`, { stdio: 'ignore', timeout: 5000 });
+                // Test if Chrome works - different commands for different platforms
+                const testCommand = currentPlatform === 'win32' 
+                    ? `"${path}" --version`
+                    : `${path} --version --no-sandbox`;
+                execSync(testCommand, { stdio: 'ignore', timeout: 5000 });
                 console.log(`[CHROME] ✅ Working Chrome found: ${path}`);
                 return path;
             } catch {
@@ -34,30 +49,39 @@ export async function ensureChrome() {
 
     console.log('[CHROME] No working system Chrome found');
 
-    // Try to install Chrome (this might fail if no root access)
+    // Try to install Chrome (this might fail if no admin access)
     try {
         console.log('[CHROME] Attempting Chrome installation...');
         
-        // Simple installation without complex repository setup
-        execSync(`
-            wget -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb &&
-            dpkg -i /tmp/chrome.deb
-        `, { stdio: 'pipe', timeout: 60000 });
-        
-        console.log('[CHROME] ✅ Chrome installed successfully');
-        return '/usr/bin/google-chrome-stable';
-        
-    } catch (installError) {
-        console.log('[CHROME] Chrome installation failed (expected if no root access)');
-        console.log('[CHROME] Will use Puppeteer Chrome or ZenRows fallback');
-        
-        // Check if Puppeteer Chrome exists
-        const puppeteerPath = '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome';
-        if (existsSync(puppeteerPath)) {
-            console.log(`[CHROME] Using Puppeteer Chrome: ${puppeteerPath}`);
-            return puppeteerPath;
+        if (currentPlatform === 'linux') {
+            // Simple installation without complex repository setup
+            execSync(`
+                wget -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb &&
+                dpkg -i /tmp/chrome.deb
+            `, { stdio: 'pipe', timeout: 60000 });
+            
+            console.log('[CHROME] ✅ Chrome installed successfully');
+            return '/usr/bin/google-chrome-stable';
+        } else if (currentPlatform === 'win32') {
+            // Windows Chrome installation using PowerShell
+            const installScript = `
+                $url = 'https://dl.google.com/chrome/install/375.126/chrome_installer.exe'
+                $output = '$env:TEMP\\chrome_installer.exe'
+                Invoke-WebRequest -Uri $url -OutFile $output
+                Start-Process -FilePath $output -ArgumentList '/silent', '/install' -Wait
+                Remove-Item $output -Force
+            `;
+            execSync(`powershell -Command "${installScript}"`, { stdio: 'pipe', timeout: 120000 });
+            
+            console.log('[CHROME] ✅ Chrome installed successfully');
+            // Return the most likely installation path
+            const winChromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+            return existsSync(winChromePath) ? winChromePath : 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
         }
         
+    } catch (installError) {
+        console.log('[CHROME] Chrome installation failed (expected if no admin access)');
+        console.log('[CHROME] No system Chrome available - application requires Chrome to be installed');
         return null;
     }
 }

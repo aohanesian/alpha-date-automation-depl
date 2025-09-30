@@ -11,6 +11,7 @@
     "build:prod": "npm install && npm run build",
     "build:simple": "bash build-simple.sh", 
     "build:fast": "bash build-fast.sh",
+    "build:windows": "build-windows.bat",
     "build:local": "npm install && npm run build",
     "preview": "vite preview",
     "start": "node server.js",
@@ -18,8 +19,10 @@
     "test:captcha": "node test-captcha.js",
     "test:captcha:manual": "node test-captcha.js --manual",
     "test:chrome": "node test-chrome.js",
+    "test:chrome:launch": "node test-chrome-launch.js",
     "test:api": "node test-api-only.js",
-    "debug:chrome": "node debug-chrome.js"
+    "debug:chrome": "node debug-chrome.js",
+    "install:chrome:windows": "powershell -Command \"Invoke-WebRequest -Uri 'https://dl.google.com/chrome/install/375.126/chrome_installer.exe' -OutFile '$env:TEMP\\chrome_installer.exe'; Start-Process -FilePath '$env:TEMP\\chrome_installer.exe' -ArgumentList '/silent', '/install' -Wait; Remove-Item '$env:TEMP\\chrome_installer.exe' -Force\""
   },
   "dependencies": {
     "body-parser": "^1.20.2",

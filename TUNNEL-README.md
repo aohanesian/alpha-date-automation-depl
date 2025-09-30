@@ -12,7 +12,7 @@ brew install bore-cli
 # Start tunnel
 ./bore-tunnel.sh
 # or
-bore local 3000 --to bore.pub
+bore local 5000 --to bore.pub
 ```
 
 **Why Bore CLI?**
@@ -55,7 +55,7 @@ ngrok config add-authtoken YOUR_TOKEN
 # Start tunnel
 ./tunnel.sh
 # or
-ngrok http 3000
+ngrok http 5000
 ```
 
 **⚠️ Ngrok Limitations:**
@@ -128,12 +128,12 @@ bore --version
 # Reinstall if needed
 brew install bore-cli
 
-# Check if port 3000 is available
-lsof -i :3000
+# Check if port 5000 is available
+lsof -i :5000
 ```
 
 ### General Issues
-- **Port 3000 in use:** Stop other services using port 3000
+- **Port 5000 in use:** Stop other services using port 5000
 - **Firewall blocking:** Check macOS firewall settings
 - **Server not running:** Ensure `./start-local-server.sh` is running
 
